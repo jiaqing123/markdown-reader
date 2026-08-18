@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown 浏览器</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --border:#e3e6ec; --text:#20242e; --muted:#717a8c;
+  --accent:#2f6fed; --accent-soft:#eef3ff; --code-bg:#f1f3f6; --hover:#f0f2f6;
+  --mark:#ffe58a; --danger:#d64545; --shadow:0 1px 3px rgba(20,28,48,.08);
+}
+[data-theme="dark"]{
+  --bg:#0e1116; --panel:#161a22; --border:#262d3a; --text:#e7eaf0; --muted:#8d96a8;
+  --accent:#5b9bff; --accent-soft:#182440; --code-bg:#0c0f14; --hover:#1e2431;
+  --mark:#6b5200;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+button:hover:not(:disabled){background:var(--hover)}
+button:disabled{opacity:.35;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover:not(:disabled){filter:brightness(1.08);background:var(--accent)}
+button.small{padding:3px 8px;font-size:12px}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--border);z-index:10}
+.brand{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.brand .logo{font-size:20px}
+#headerStatus{color:var(--muted);font-size:12.5px;max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spacer{flex:1}
+#progress{flex-basis:100%;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+#progressBar{flex:1;height:6px;background:var(--code-bg);border-radius:3px;overflow:hidden}
+#progressBar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+#progressText{max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{flex:1;display:flex;min-height:0;position:relative}
+#sidebar{width:330px;min-width:220px;max-width:540px;resize:horizontal;overflow:hidden;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border)}
+.side-top{padding:10px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.search-row{display:flex;gap:8px;align-items:center}
+#searchInput{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);outline:none;font:inherit}
+#searchInput:focus{border-color:var(--accent)}
+.search-row label{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:12.5px;white-space:nowrap;cursor:pointer}
+#restoreBanner{margin:10px;padding:10px 12px;border:1px dashed var(--accent);background:var(--accent-soft);border-radius:10px;font-size:12.5px;display:flex;flex-direction:column;gap:6px}
+.rb-title{font-weight:600}
+.rb-meta{color:var(--muted);font-size:12px}
+.rb-btns{display:flex;gap:8px}
+#fileList{flex:1;overflow:auto;padding:8px}
+.empty{color:var(--muted);text-align:center;padding:32px 12px;font-size:13px;line-height:2}
+details{margin-left:2px}
+summary{cursor:pointer;padding:4px 8px;border-radius:6px;color:var(--muted);font-size:13px;user-select:none;list-style:none;display:flex;align-items:center;gap:4px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:'▸';display:inline-block;transition:transform .15s;font-size:10px;color:var(--muted)}
+details[open]>summary::before{transform:rotate(90deg)}
+summary:hover{background:var(--hover);color:var(--text)}
+.file-row{display:flex;align-items:center;gap:7px;padding:5px 8px 5px 14px;border-radius:6px;cursor:pointer;user-select:none;border-left:2px solid transparent}
+.file-row:hover{background:var(--hover)}
+.file-row.active{background:var(--accent-soft);border-left-color:var(--accent);color:var(--accent);font-weight:600}
+.fr-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fr-size{color:var(--muted);font-size:11px}
+.sr-row{padding:7px 10px;border-radius:8px;cursor:pointer;border-bottom:1px dashed var(--border)}
+.sr-row:hover{background:var(--hover)}
+.sr-head{font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-snip{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sideStatus{padding:8px 12px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+#content{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;background:var(--bg)}
+#toolbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border)}
+#filePath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
+#navPos{color:var(--muted);font-size:12px;min-width:64px;text-align:center}
+#article{flex:1;overflow:auto;position:relative}
+#doc{max-width:920px;margin:0 auto;padding:26px 40px 90px}
+#doc h1{font-size:1.9em;border-bottom:1px solid var(--border);padding-bottom:.3em;margin:1.2em 0 .6em}
+#doc h2{font-size:1.45em;border-bottom:1px solid var(--border);padding-bottom:.25em;margin:1.2em 0 .5em}
+#doc h3{font-size:1.2em;margin:1.1em 0 .4em}
+#doc h4{font-size:1.05em;margin:1em 0 .3em}
+#doc h1:first-child{margin-top:0}
+#doc p{margin:.6em 0}
+#doc a{color:var(--accent);text-decoration:none}
+#doc a:hover{text-decoration:underline}
+#doc img{max-width:100%;border-radius:8px}
+#doc code{font-family:Consolas,"JetBrains Mono","Courier New",monospace;font-size:.9em}
+#doc :not(pre)>code{background:var(--code-bg);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+#doc pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;overflow-x:auto;line-height:1.55}
+#doc pre code{background:none;border:none;padding:0}
+#doc blockquote{margin:.8em 0;padding:4px 16px;border-left:4px solid var(--accent);background:var(--accent-soft);color:var(--muted);border-radius:0 8px 8px 0}
+#doc table{border-collapse:collapse;margin:.9em 0;display:block;overflow-x:auto;max-width:100%}
+#doc th,#doc td{border:1px solid var(--border);padding:6px 14px;text-align:left}
+#doc th{background:var(--code-bg);font-weight:600}
+#doc tr:nth-child(2n) td{background:color-mix(in srgb,var(--panel) 55%,transparent)}
+#doc hr{border:none;border-top:2px solid var(--border);margin:1.6em 0}
+#doc ul,#doc ol{padding-left:1.8em;margin:.5em 0}
+#doc li{margin:.2em 0}
+#doc li.task-list-item{list-style:none;margin-left:-1.4em}
+#doc li.task-list-item input{margin-right:8px;accent-color:var(--accent)}
+mark{background:var(--mark);padding:0 3px;border-radius:3px}
+#doc .err{color:var(--danger);padding:20px;text-align:center}
+#doc .rawview{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:13px}
+#tocPanel{position:absolute;top:0;right:0;bottom:0;width:280px;background:var(--panel);border-left:1px solid var(--border);overflow:auto;padding:14px 10px 30px;z-index:20;box-shadow:var(--shadow)}
+#tocPanel h6{margin:0 6px 8px;color:var(--muted);font-size:12px;letter-spacing:1px}
+#tocPanel ul{list-style:none;margin:0;padding:0}
+#tocPanel li{margin:1px 0}
+#tocPanel a{display:block;padding:4px 8px;border-radius:6px;color:var(--text);text-decoration:none;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tocPanel a:hover{background:var(--hover);color:var(--accent)}
+#tocPanel .toc-l1{font-weight:700}
+#tocPanel .toc-l2{padding-left:10px}
+#tocPanel .toc-l3{padding-left:20px;font-size:12.5px}
+#tocPanel .toc-l4{padding-left:30px;font-size:12px;color:var(--muted)}
+#welcome{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:1}
+.w-card{text-align:center;padding:60px 70px;border:2px dashed var(--border);border-radius:20px;background:var(--panel);color:var(--muted);max-width:520px}
+.w-card .big{font-size:56px;margin-bottom:16px}
+.w-card h2{margin:0 0 8px;color:var(--text)}
+.w-card p{margin:6px 0;font-size:13.5px}
+#toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(24px);background:#1b2230;color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:all .25s;z-index:100;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:70vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+[hidden]{display:none !important}
+@media (max-width:760px){
+  #sidebar{width:240px}
+  #doc{padding:18px 18px 70px}
+  #tocPanel{width:220px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">📖</span>Markdown 浏览器</div>
+  <span id="headerStatus"></span>
+  <div class="spacer"></div>
+  <button id="btnDir" class="primary">📁 打开文件夹</button>
+  <button id="btnFiles">📄 打开文件</button>
+  <button id="btnClear">🗑 清空</button>
+  <button id="btnTheme" title="切换主题">🌙</button>
+  <div id="progress" hidden>
+    <div id="progressBar"><i></i></div>
+    <span id="progressText"></span>
+    <button id="btnCancelRead" class="small">取消</button>
+  </div>
+</header>
+<main>
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="search-row">
+        <input id="searchInput" type="search" placeholder="搜索文件名…" autocomplete="off">
+        <label title="在已加载的文件内容中搜索"><input type="checkbox" id="searchContent">全文</label>
+      </div>
+    </div>
+    <div id="restoreBanner" hidden></div>
+    <div id="fileList"></div>
+    <div id="sideStatus"></div>
+  </aside>
+  <section id="content">
+    <div id="toolbar" hidden>
+      <span id="filePath"></span>
+      <button id="btnPrev" title="上一个（←）">←</button>
+      <span id="navPos"></span>
+      <button id="btnNext" title="下一个（→）">→</button>
+      <button id="btnToc" title="显示 / 隐藏目录">📑 目录</button>
+      <button id="btnCopy" title="复制 Markdown 原文">📋 复制</button>
+      <button id="btnRaw" title="查看 / 返回渲染视图">源文本</button>
+    </div>
+    <div id="article"><div id="doc"></div></div>
+    <div id="tocPanel" hidden><h6>目录</h6></div>
+    <div id="welcome">
+      <div class="w-card">
+        <div class="big">📂</div>
+        <h2>打开一个本地文件夹</h2>
+        <p>点击上方「打开文件夹」选择目录，或直接把文件夹 / Markdown 文件拖到本页。</p>
+        <p>支持 .md / .markdown / .mdown / .mkd / .mdx，纯本地运行，无需服务器与网络。</p>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<input type="file" id="dirInput" webkitdirectory multiple hidden>
+<input type="file" id="fileInput" accept=".md,.markdown,.mdown,.mkd,.mdx" multiple hidden>
+<script>
