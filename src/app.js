@@ -403,6 +403,7 @@
     html = html.replace(/<a /g, '<a target="_blank" rel="noopener" ');
     doc.innerHTML = html;
 
+    enableTaskChecks(doc);
     ensureHeadingIds(doc);
     buildToc(doc);
     $('#article').scrollTop = 0;
@@ -422,6 +423,20 @@
     $('#btnPrev').disabled = idx <= 0;
     $('#btnNext').disabled = idx < 0 || idx >= state.visible.length - 1;
     $('#navPos').textContent = idx >= 0 ? (idx + 1) + ' / ' + state.visible.length : '';
+  }
+
+  /* 任务列表勾选框：可点击切换（只读预览，仅本次浏览生效，不写入文件） */
+  function enableTaskChecks(doc) {
+    var boxes = doc.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      b.disabled = false;
+      b.title = '只读预览：勾选状态不会写入文件';
+      var hinted = false;
+      b.addEventListener('change', function () {
+        if (!hinted) { hinted = true; toast('只读预览：勾选仅本次浏览生效，不会写入文件'); }
+      });
+    }
   }
 
   function ensureHeadingIds(doc) {
@@ -526,6 +541,7 @@
       doc.innerHTML = '<pre class="rawview">' + esc(f.text == null ? '（无内容）' : f.text) + '</pre>';
     } else if (art.dataset.prev) {
       doc.innerHTML = art.dataset.prev;
+      enableTaskChecks(doc);
       delete art.dataset.prev;
     }
   }
@@ -656,10 +672,21 @@
       var sample = '# 标题一\n\n**加粗** 与 `行内代码`\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] 完成的任务\n- 普通列表项\n\n> 引用一段话\n\n```js\nconst x = 1;\n```\n\n[链接](https://example.com)\n';
       var doc = $('#doc');
       doc.innerHTML = sanitizeHtml(marked.parse(sample));
+      enableTaskChecks(doc);
       ensureHeadingIds(doc);
       buildToc(doc);
       $('#btnToc').click();
-      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS</p>';
+      var boxes = doc.querySelectorAll('input[type="checkbox"]');
+      var box = boxes[1] || boxes[0];
+      var notDisabled = box && !box.disabled;
+      var before = box && box.checked;
+      if (box) box.click();
+      var toggled = box && box.checked !== before;
+      var diag = document.createElement('p');
+      diag.id = 'selftest-diag';
+      diag.textContent = 'boxes=' + boxes.length + ' before=' + before + ' after=' + (box && box.checked) + ' disabled=' + (box && box.disabled);
+      doc.appendChild(diag);
+      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + '</p>';
       console.log('[selftest] engines:', typeof marked, typeof DOMPurify);
       $('#headerStatus').textContent = (window.marked && window.DOMPurify) ? '引擎就绪' : '引擎缺失';
     })();
