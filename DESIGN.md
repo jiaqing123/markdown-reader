@@ -35,6 +35,8 @@
    都有降级路径，降级失败也不影响其它功能。
 4. **ES5、零依赖**：保持与现有代码一致的写法；`src/` 是源，`index.html` 是产物，
    **改完源码必须重建 index.html 并提交两者**（见第 2 节）。
+5. **UI 文案国际化**：界面文案一律走 `tr(key)` 或 `data-i18n` 标注（默认中文，支持英文），
+   **不许把中文/英文硬编码在 JS 或 HTML 里**；Markdown 正文永远原样渲染、不参与翻译。
 
 ---
 
@@ -179,7 +181,21 @@ flowchart TB
 | --- | --- |
 | IndexedDB：库 `markdown-reader` v1，store `kv`，键 `last` | `{id:'last', savedAt, folder, files:[{name,rel,size,text}]}`。文本超过 `MAX_CACHE_TEXT`(4MB) 不缓存正文，仅保留之前缓存过的正文（`saveCache(metaOnly)` 分两阶段写） |
 | localStorage：`mdreader-theme` | `'light' \| 'dark'` |
+| localStorage：`mdreader-lang` | `'zh' \| 'en'`（默认 `'zh'`） |
 | 内存：`state.imageUrls` | 相对路径图片的 blob URL，切文件/清空时 `revokeObjectURL` |
+
+### 4.4 界面文案与国际化（i18n）
+
+- **字典**：app.js 顶部 `DICT = { zh: {…}, en: {…} }`，键名小驼峰、值可含 `{占位}` 模板。
+- **查表**：`tr(key, params)` —— 取当前语言文案，`{x}` 用 `params.x` 替换；
+  键缺失时回退中文，再缺失原样返回键名（便于发现漏翻）。
+- **静态骨架**：part1.html 元素用 `data-i18n`（文本）/ `data-i18n-title`（tooltip）/
+  `data-i18n-placeholder`（占位符）标注，由 `applyStaticLang()` 统一注入。
+- **切换**：头部 `#btnLang`（显示目标语言 🌐 EN / 🌐 中文）→ `applyLang(next)`：
+  存 localStorage → 刷静态文案 → 若有当前文件则重走 `openFile`（正文章节内动态文案
+  如任务勾选框、代码复制按钮随新语言重建）→ 刷新侧栏/横幅。`applyLang(l, true)`
+  用于启动（只刷静态文案，不重绘）。
+- **红线**：只翻译程序界面，`state.files` 中的文件名、正文、搜索结果摘要**永不翻译**。
 
 恢复流程：启动时 `refreshRestoreBanner()` 读到缓存、且当前列表为空 → 侧栏出现
 「恢复上次」横幅 → 点击后把缓存条目映射回 `state.files`（`file:null`）并打开第一个文件。
@@ -192,7 +208,7 @@ flowchart TB
 
 ```text
 <body> (flex column)
-├─ <header>  brand + #headerStatus + spacer + 按钮群(#btnDir #btnFiles #btnClear #btnTheme)
+├─ <header>  brand + #headerStatus + spacer + 按钮群(#btnDir #btnFiles #btnClear #btnTheme #btnLang)
 │            └─ #progress (批量读取进度条, 默认 hidden)
 ├─ <main> (flex row)
 │  ├─ <aside #sidebar> (可横向拖宽 220–540px)
@@ -214,7 +230,7 @@ flowchart TB
 | ID | 位置 | 职责 | 在 app.js 的主要使用者 |
 | --- | --- | --- | --- |
 | `headerStatus` | header | 当前文件夹名 · 文件数 | `updateStatus`、selftest |
-| `btnDir` / `btnFiles` / `btnClear` / `btnTheme` | header | 打开文件夹 / 打开文件 / 清空 / 主题 | 事件绑定区 |
+| `btnDir` / `btnFiles` / `btnClear` / `btnTheme` / `btnLang` | header | 打开文件夹 / 打开文件 / 清空 / 主题 / 语言切换 | 事件绑定区 |
 | `progress` `progressBar` `progressText` `btnCancelRead` | header | 批量读取进度 | `showProgress/updateProgress/hideProgress` |
 | `searchInput` `searchContent` | sidebar 顶 | 文件名过滤 / 全文搜索开关 | 事件绑定区 |
 | `restoreBanner` | sidebar | 缓存恢复 UI（内含动态 `btnRestore`/`btnDelCache`） | `refreshRestoreBanner` |
@@ -406,8 +422,18 @@ flowchart TD
 | `showProgress / updateProgress / hideProgress` | 批量读取进度条 |
 | `clearAll()` | 全清（含缓存与 blob URL） |
 | 事件绑定区（IIFE 尾部） | 全部按钮/输入/键盘/拖放监听（见源码注释 `事件绑定`） |
-| 启动区 | 恢复主题 → updateStatus → refreshRestoreBanner |
+| 启动区 | 恢复主题 → 恢复语言 → updateStatus → refreshRestoreBanner |
 | `#selftest` 分支 | 地址栏 `#selftest` 时渲染示例并输出断言（见第 10 节） |
+
+### 7.7 国际化（i18n，见 4.4）
+
+| 名字 | 作用 | 备注 |
+| --- | --- | --- |
+| `uiLang` | 当前语言 `'zh' \| 'en'` | IIFE 内模块变量，默认 zh |
+| `DICT` | zh/en 两套文案字典 | app.js 顶部；新文案两个语言都要加 |
+| `tr(key, params)` | 查文案 + `{占位}` 替换，缺失回退 | **所有动态文案的唯一出口** |
+| `applyStaticLang()` | 注入 `data-i18n` 系静态文案 + `#btnLang` 标签 | 切换/启动都会调用 |
+| `applyLang(l, initial)` | 语言切换主入口：持久化→静态→重渲染当前视图 | `initial=true` 用于启动不重绘 |
 
 ---
 
@@ -446,7 +472,8 @@ flowchart TD
 
 1. **语法**：`node --check src/app.js`
 2. **构建后自检钩子**：`index.html#selftest`（渲染固定示例：标题/表格/任务列表/引用/
-   代码块/链接，验证引擎存在 + 勾选框只读点击生效，DOM 末尾追加 `SELFTEST-PASS`）。
+   代码块/链接，验证引擎存在 + 勾选框只读点击生效 + 语言 zh↔en 往返切换，
+   DOM 末尾追加 `SELFTEST-PASS`，含 `-CHECK-OK` 与 `-LANG-OK` 标记）。
    无头验证示例：
    ```powershell
    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `
@@ -460,7 +487,7 @@ flowchart TD
    - 相对路径图片显示；站内相对 .md 链接跳转
    - 文件名过滤 / 全文搜索（点击结果跳转+高亮）
    - 目录 TOC 跳转；`←/→` 切换；源文本往返后按钮仍可用
-   - 深/浅主题切换；关闭页面重开「恢复上次」；清空
+   - 深/浅主题切换；中文 / English 切换（含重开后记忆）；关闭页面重开「恢复上次」；清空
 4. **回归注意**：任何"渲染后增强"改动必须验证 6.2 的三个 innerHTML 点行为一致。
 
 ---
@@ -482,6 +509,8 @@ flowchart TD
 | 新浏览器特性 + 降级 | 仿 `pickFolder`（探测→catch→回退） | 取消(AbortError)静默 |
 | 改变量/常量（如 4MB） | app.js 顶部常量区 | 涉及缓存兼容性时先测恢复 |
 | 侧栏行为（默认展开、图标、排序） | `buildTree`/`renderNode`；CSS | 排序统一 natural |
+| 改界面语言/文案 | `DICT`（zh/en 都要加）+ part1 的 `data-i18n` 标注 | 用 `tr()`；重建后两语言各看一遍 |
+| 加新语言（如 ja） | `DICT.ja` + `applyLang` 白名单加分支 + `#btnLang` 文案 | 见 4.4 |
 | 快捷键 | 事件绑定区 `document keydown` | INPUT/TEXTAREA 豁免 |
 | 本图（本文档）过时 | 更新对应章节 | 见下节约定 |
 

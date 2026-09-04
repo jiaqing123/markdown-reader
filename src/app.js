@@ -34,6 +34,128 @@
     return html;
   }
 
+  /* ---------- 国际化（i18n） ----------
+     UI 文案字典：默认 zh，支持 en。只翻译界面，不翻译 Markdown 正文。
+     静态骨架用 data-i18n / data-i18n-title / data-i18n-placeholder 标注，
+     动态文案一律走 tr(key)。语言选择存 localStorage 'mdreader-lang'。 */
+  var uiLang = 'zh';   // 'zh' | 'en'
+  var DICT = {
+    zh: {
+      appName: 'Markdown 浏览器', multiLoc: '多个位置',
+      btnDir: '📁 打开文件夹', btnFiles: '📄 打开文件', btnClear: '🗑 清空',
+      btnThemeTitle: '切换主题', btnLangTitle: '切换语言（中文 / English）', btnCancelRead: '取消',
+      searchPh: '搜索文件名…', searchContent: '全文', searchContentTitle: '在已加载的文件内容中搜索',
+      rbRestore: '恢复', rbClearCache: '清除缓存', rbTitle: '恢复上次：{folder}',
+      rbMeta: '{n} 个文件 · 缓存于 {t}', restoredMsg: '已从缓存恢复，重新「打开文件夹」可刷新内容',
+      cacheCleared: '缓存已清除',
+      noMdFiles: '未找到 Markdown 文件', readFailed: '读取失败',
+      loadMsg: '加载 {m} 个 Markdown 文件', reloadMsg: '已刷新 {r} 个，加载 {m} 个 Markdown 文件',
+      stopReading: '已停止读取',
+      fileListEmpty: '尚未打开任何文件夹<br>点击上方「打开文件夹」，<br>或直接把文件夹拖到页面',
+      searchNoResult: '未找到包含「{q}」的内容',
+      headStatus: '{folder} · {n} 个文件', sideFiles: '{n} 个 Markdown 文件',
+      sideFiltered: '{n} 个 Markdown 文件 · 显示 {m}',
+      sideEmpty: '未打开文件夹，可拖入或点击「打开文件夹」',
+      searchMatches: '全文搜索：{n} 处匹配', lineSnippet: '第 {n} 行：',
+      folderFallback: '文件夹',
+      errNotCached: '该文件内容未缓存。请重新「打开文件夹」后再浏览。',
+      errParse: 'Markdown 解析失败：{e}',
+      docTitle: '{name} · {app}',
+      taskTitle: '只读预览：勾选状态不会写入文件',
+      taskHint: '只读预览：勾选仅本次浏览生效，不会写入文件',
+      copyCodeTitle: '复制代码', copyCode: '复制', copied: '✓ 已复制', codeCopied: '代码已复制',
+      btnPrevTitle: '上一个（←）', btnNextTitle: '下一个（→）',
+      btnToc: '📑 目录', btnTocTitle: '显示 / 隐藏目录',
+      btnCopy: '📋 复制', btnCopyTitle: '复制 Markdown 原文',
+      btnRaw: '源文本', btnRawTitle: '查看 / 返回渲染视图',
+      noContent: '（无内容）', tocTitle: '目录',
+      noCopyContent: '无可复制内容', copiedRaw: '已复制原文到剪贴板', copyFailed: '复制失败',
+      welcomeTitle: '打开一个本地文件夹',
+      welcomeP1: '点击上方「打开文件夹」选择目录，或直接把文件夹 / Markdown 文件拖到本页。',
+      welcomeP2: '支持 .md / .markdown / .mdown / .mkd / .mdx，纯本地运行，无需服务器与网络。',
+      listEmpty: '列表为空',
+      confirmClear: '清空当前文件列表？（已保存的缓存也会被删除）',
+      cleared: '已清空',
+      enginesReady: '引擎就绪', enginesMissing: '引擎缺失'
+    },
+    en: {
+      appName: 'Markdown Reader', multiLoc: 'Multiple locations',
+      btnDir: '📁 Open Folder', btnFiles: '📄 Open Files', btnClear: '🗑 Clear All',
+      btnThemeTitle: 'Switch theme', btnLangTitle: 'Switch language (中文 / English)', btnCancelRead: 'Cancel',
+      searchPh: 'Search filenames…', searchContent: 'Full text', searchContentTitle: 'Search inside loaded file contents',
+      rbRestore: 'Restore', rbClearCache: 'Clear cache', rbTitle: 'Restore last: {folder}',
+      rbMeta: '{n} files · cached {t}', restoredMsg: 'Restored from cache. Re-open the folder to refresh.',
+      cacheCleared: 'Cache cleared',
+      noMdFiles: 'No Markdown files found', readFailed: 'Read failed',
+      loadMsg: 'Loaded {m} Markdown files', reloadMsg: 'Refreshed {r}, loaded {m} Markdown files',
+      stopReading: 'Reading stopped',
+      fileListEmpty: 'No folder opened yet.<br>Click “Open Folder” above,<br>or drag a folder onto this page.',
+      searchNoResult: 'No content containing “{q}”',
+      headStatus: '{folder} · {n} files', sideFiles: '{n} Markdown files',
+      sideFiltered: '{n} Markdown files · showing {m}',
+      sideEmpty: 'No folder open. Drag files in or click “Open Folder”.',
+      searchMatches: 'Full-text search: {n} matches', lineSnippet: 'Line {n}: ',
+      folderFallback: 'folder',
+      errNotCached: 'This file’s content is not cached. Please re-open the folder to browse it.',
+      errParse: 'Markdown parse error: {e}',
+      docTitle: '{name} · {app}',
+      taskTitle: 'Read-only preview: checking will not modify the file',
+      taskHint: 'Read-only preview: toggles apply to this session only',
+      copyCodeTitle: 'Copy code', copyCode: 'Copy', copied: '✓ Copied', codeCopied: 'Code copied',
+      btnPrevTitle: 'Previous (←)', btnNextTitle: 'Next (→)',
+      btnToc: '📑 TOC', btnTocTitle: 'Show / hide table of contents',
+      btnCopy: '📋 Copy', btnCopyTitle: 'Copy Markdown source',
+      btnRaw: 'Source', btnRawTitle: 'View / back to rendered view',
+      noContent: '(no content)', tocTitle: 'Contents',
+      noCopyContent: 'Nothing to copy', copiedRaw: 'Source copied to clipboard', copyFailed: 'Copy failed',
+      welcomeTitle: 'Open a local folder',
+      welcomeP1: 'Click “Open Folder” above to choose a folder, or drag a folder / Markdown files onto this page.',
+      welcomeP2: 'Supports .md / .markdown / .mdown / .mkd / .mdx. Runs fully locally — no server or network needed.',
+      listEmpty: 'List is empty',
+      confirmClear: 'Clear the current file list? (The saved cache will also be deleted.)',
+      cleared: 'Cleared',
+      enginesReady: 'Engines ready', enginesMissing: 'Engines missing'
+    }
+  };
+
+  /* 查文案：DICT[当前语言][key]，支持 {占位} 替换；缺失回退 zh，再缺失原样返回 key */
+  function tr(key, params) {
+    var table = DICT[uiLang] || DICT.zh;
+    var s = table[key];
+    if (s == null) s = (DICT.zh[key] != null) ? DICT.zh[key] : key;
+    if (params) { for (var k in params) { s = s.split('{' + k + '}').join(String(params[k])); } }
+    return s;
+  }
+
+  /* 把静态骨架（data-i18n 等）刷成当前语言文案 */
+  function applyStaticLang() {
+    $$('[data-i18n]').forEach(function (el) { el.textContent = tr(el.getAttribute('data-i18n')); });
+    $$('[data-i18n-title]').forEach(function (el) { el.title = tr(el.getAttribute('data-i18n-title')); });
+    $$('[data-i18n-placeholder]').forEach(function (el) { el.placeholder = tr(el.getAttribute('data-i18n-placeholder')); });
+    var b = $('#btnLang');
+    if (b) b.textContent = (uiLang === 'zh') ? '🌐 EN' : '🌐 中文';
+  }
+
+  /* 切换语言：持久化 + 静态文案 + 按需重渲染当前视图（initial 用于启动，避免重绘） */
+  function applyLang(l, initial) {
+    uiLang = (l === 'en') ? 'en' : 'zh';
+    try { localStorage.setItem('mdreader-lang', uiLang); } catch (e) { /* 忽略 */ }
+    document.documentElement.lang = uiLang;
+    applyStaticLang();
+    if (!state.current) document.title = tr('appName');   // 无打开文件时用本地化应用名
+    if (initial) return;
+    var art = $('#article');
+    var st = art.scrollTop;
+    if (state.current) {
+      if (state.rawMode) toggleRaw();       // 先退出源文本视图
+      openFile(state.current);              // 重渲染正文（勾选框/复制按钮等动态文案）
+      art.scrollTop = st;
+    }
+    if (state.files.length || $('#fileList .empty')) renderTree();
+    else updateStatus();
+    refreshRestoreBanner();
+  }
+
   /* ---------- 小工具 ---------- */
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -74,7 +196,7 @@
   function folderName() {
     if (!state.files.length) return '';
     var tops = new Set(state.files.map(function (f) { return f.rel.split('/')[0]; }));
-    return tops.size === 1 ? Array.from(tops)[0] : '多个位置';
+    return tops.size === 1 ? Array.from(tops)[0] : tr('multiLoc');
   }
 
   /* ---------- IndexedDB 缓存 ---------- */
@@ -142,9 +264,9 @@
       if (state.files.length) { el.hidden = true; return; }
       var n = entry.files.length;
       el.innerHTML =
-        '<div class="rb-title">📂 恢复上次：' + esc(entry.folder || '文件夹') + '</div>' +
-        '<div class="rb-meta">' + n + ' 个文件 · 缓存于 ' + esc(new Date(entry.savedAt).toLocaleString()) + '</div>' +
-        '<div class="rb-btns"><button id="btnRestore" class="primary small">恢复</button><button id="btnDelCache" class="small">清除缓存</button></div>';
+        '<div class="rb-title">📂 ' + tr('rbTitle', { folder: esc(entry.folder || tr('folderFallback')) }) + '</div>' +
+        '<div class="rb-meta">' + tr('rbMeta', { n: n, t: esc(new Date(entry.savedAt).toLocaleString()) }) + '</div>' +
+        '<div class="rb-btns"><button id="btnRestore" class="primary small">' + tr('rbRestore') + '</button><button id="btnDelCache" class="small">' + tr('rbClearCache') + '</button></div>';
       el.hidden = false;
       $('#btnRestore').onclick = function () {
         state.files = entry.files.map(function (x) {
@@ -153,13 +275,13 @@
         state.files.sort(function (a, b) { return a.rel.localeCompare(b.rel, undefined, { numeric: true }); });
         renderTree();
         saveCache();
-        toast('已从缓存恢复，重新「打开文件夹」可刷新内容');
+        toast(tr('restoredMsg'));
         if (state.files.length) openFile(state.files[0]);
       };
       $('#btnDelCache').onclick = async function () {
         try { await idbDel(db, 'last'); } catch (e) { /* 忽略 */ }
         el.hidden = true;
-        toast('缓存已清除');
+        toast(tr('cacheCleared'));
       };
     } catch (e) { /* 浏览器不支持 IndexedDB 时静默降级 */ }
   }
@@ -208,11 +330,11 @@
       if (MD_RE.test(f.name)) mdList.push({ name: f.name, rel: rel, size: f.size, file: f, text: null, from: 'file' });
     }
     if (mdList.length) await addFiles(mdList);
-    else toast('未找到 Markdown 文件');
+    else toast(tr('noMdFiles'));
   }
 
   async function addFiles(list) {
-    if (!list || !list.length) { toast('未找到 Markdown 文件'); return; }
+    if (!list || !list.length) { toast(tr('noMdFiles')); return; }
     var freshRels = new Set(list.map(function (f) { return f.rel; }));
     var replaced = state.files.filter(function (f) { return freshRels.has(f.rel); }).length;
     state.files = state.files.filter(function (f) { return !freshRels.has(f.rel); }).concat(list);
@@ -226,7 +348,7 @@
     for (var i = 0; i < list.length; i++) {
       if (!state.reading) break;   // 用户取消：已读取的保留，未读取的稍后可再读
       try { list[i].text = await readText(list[i].file); }
-      catch (e) { list[i].text = null; list[i].error = '读取失败'; }
+      catch (e) { list[i].text = null; list[i].error = tr('readFailed'); }
       done++;
       updateProgress(done, list.length, list[i].name);
       await sleep(0);
@@ -235,7 +357,7 @@
     hideProgress();
     renderTree();
     saveCache();
-    toast((replaced ? '已刷新 ' + replaced + ' 个，' : '') + '加载 ' + list.length + ' 个 Markdown 文件');
+    toast((replaced ? tr('reloadMsg', { r: replaced, m: list.length }) : tr('loadMsg', { m: list.length })));
     if (!state.current && state.files.length) openFile(state.files[0]);
   }
 
@@ -313,7 +435,7 @@
     }
     state.visible = results.map(function (r) { return r.f; });
     if (!results.length) {
-      box.innerHTML = '<div class="empty">未找到包含「' + esc(q) + '」的内容</div>';
+      box.innerHTML = '<div class="empty">' + tr('searchNoResult', { q: esc(q) }) + '</div>';
       updateStatus();
       return;
     }
@@ -327,20 +449,20 @@
       head.textContent = '📄 ' + r.f.rel;
       var sn = document.createElement('div');
       sn.className = 'sr-snip';
-      sn.textContent = '第 ' + r.line + ' 行：' + r.snippet;
+      sn.textContent = tr('lineSnippet', { n: r.line }) + r.snippet;
       row.appendChild(head);
       row.appendChild(sn);
       row.addEventListener('click', (function (ff) { return function () { openFile(ff, phrase); }; })(r.f));
       box.appendChild(row);
     }
-    updateStatus('全文搜索：' + results.length + ' 处匹配');
+    updateStatus(tr('searchMatches', { n: results.length }));
   }
 
   function renderTree() {
     var box = $('#fileList');
     box.innerHTML = '';
     if (!state.files.length) {
-      box.innerHTML = '<div class="empty">尚未打开任何文件夹<br>点击上方「打开文件夹」，<br>或直接把文件夹拖到页面</div>';
+      box.innerHTML = '<div class="empty">' + tr('fileListEmpty') + '</div>';
       state.visible = [];
       updateStatus();
       return;
@@ -362,10 +484,12 @@
   }
 
   function updateStatus(msg) {
-    $('#headerStatus').textContent = state.files.length ? folderName() + ' · ' + state.files.length + ' 个文件' : '';
+    $('#headerStatus').textContent = state.files.length ? tr('headStatus', { folder: folderName(), n: state.files.length }) : '';
     $('#sideStatus').textContent = msg || (state.files.length
-      ? state.files.length + ' 个 Markdown 文件' + (state.filter ? ' · 显示 ' + state.visible.length : '')
-      : '未打开文件夹，可拖入或点击「打开文件夹」');
+      ? (state.filter
+        ? tr('sideFiltered', { n: state.files.length, m: state.visible.length })
+        : tr('sideFiles', { n: state.files.length }))
+      : tr('sideEmpty'));
   }
 
   /* ---------- 阅读 ---------- */
@@ -379,18 +503,18 @@
     $('#welcome').hidden = true;
     $('#toolbar').hidden = false;
     $('#filePath').textContent = f.rel;
-    document.title = f.name + ' · Markdown 浏览器';
+    document.title = tr('docTitle', { name: f.name, app: tr('appName') });
     markActive();
 
     var doc = $('#doc');
     if (f.text == null && !f.file) {
-      doc.innerHTML = '<div class="err">该文件内容未缓存。请重新「打开文件夹」后再浏览。</div>';
+      doc.innerHTML = '<div class="err">' + tr('errNotCached') + '</div>';
       updateNav();
       return;
     }
     if (f.text == null && f.file) {
       try { f.text = await readText(f.file); }
-      catch (e) { f.text = ''; f.error = '读取失败'; }
+      catch (e) { f.text = ''; f.error = tr('readFailed'); }
     }
 
     for (var u of state.imageUrls.values()) URL.revokeObjectURL(u);
@@ -398,7 +522,7 @@
 
     var html;
     try { html = marked.parse(f.text || ''); }
-    catch (e) { html = '<div class="err">Markdown 解析失败：' + esc((e && e.message) || e) + '</div>'; }
+    catch (e) { html = '<div class="err">' + tr('errParse', { e: esc((e && e.message) || e) }) + '</div>'; }
     html = sanitizeHtml(html);
     html = html.replace(/<a /g, '<a target="_blank" rel="noopener" ');
     doc.innerHTML = html;
@@ -432,10 +556,10 @@
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
       b.disabled = false;
-      b.title = '只读预览：勾选状态不会写入文件';
+      b.title = tr('taskTitle');
       var hinted = false;
       b.addEventListener('change', function () {
-        if (!hinted) { hinted = true; toast('只读预览：勾选仅本次浏览生效，不会写入文件'); }
+        if (!hinted) { hinted = true; toast(tr('taskHint')); }
       });
     }
   }
@@ -460,13 +584,13 @@
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'codecopy';
-        btn.title = '复制代码';
-        btn.textContent = '复制';
+        btn.title = tr('copyCodeTitle');
+        btn.textContent = tr('copyCode');
         btn.addEventListener('click', function () {
-          var prev = btn.textContent;
-          writeClipboard(code.textContent, '代码已复制').then(function (ok) {
+          var prev = tr('copyCode');
+          writeClipboard(code.textContent, tr('codeCopied')).then(function (ok) {
             if (!ok) return;
-            btn.textContent = '✓ 已复制';
+            btn.textContent = tr('copied');
             btn.classList.add('copied');
             setTimeout(function () {
               btn.textContent = prev;
@@ -495,7 +619,7 @@
       return { level: +h.tagName[1], id: h.id, text: h.textContent };
     });
     var panel = $('#tocPanel');
-    panel.innerHTML = '<h6>目录</h6>';
+    panel.innerHTML = '<h6>' + tr('tocTitle') + '</h6>';
     if (!heads.length) return;
     var ul = document.createElement('ul');
     for (var i = 0; i < heads.length; i++) {
@@ -578,7 +702,7 @@
     var doc = $('#doc');
     if (state.rawMode) {
       art.dataset.prev = doc.innerHTML;
-      doc.innerHTML = '<pre class="rawview">' + esc(f.text == null ? '（无内容）' : f.text) + '</pre>';
+      doc.innerHTML = '<pre class="rawview">' + esc(f.text == null ? tr('noContent') : f.text) + '</pre>';
     } else if (art.dataset.prev) {
       doc.innerHTML = art.dataset.prev;
       enableTaskChecks(doc);
@@ -604,14 +728,14 @@
     try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
     ta.remove();
     if (ok) toast(okMsg);
-    else toast('复制失败');
+    else toast(tr('copyFailed'));
     return ok;
   }
 
   async function copyRaw() {
     var f = state.current;
-    if (!f || f.text == null) { toast('无可复制内容'); return; }
-    await writeClipboard(f.text, '已复制原文到剪贴板');
+    if (!f || f.text == null) { toast(tr('noCopyContent')); return; }
+    await writeClipboard(f.text, tr('copiedRaw'));
   }
 
   /* ---------- 主题 ---------- */
@@ -631,8 +755,8 @@
 
   /* ---------- 清空 ---------- */
   async function clearAll() {
-    if (!state.files.length) { toast('列表为空'); return; }
-    if (!confirm('清空当前文件列表？（已保存的缓存也会被删除）')) return;
+    if (!state.files.length) { toast(tr('listEmpty')); return; }
+    if (!confirm(tr('confirmClear'))) return;
     state.files = [];
     state.allFiles.clear();
     state.current = null;
@@ -648,11 +772,11 @@
     $('#tocPanel').hidden = true;
     $('#btnToc').classList.remove('on');
     $('#welcome').hidden = false;
-    document.title = 'Markdown 浏览器';
+    document.title = tr('appName');
     renderTree();
     try { var db = await idbOpen(); await idbDel(db, 'last'); } catch (e) { /* 忽略 */ }
     $('#restoreBanner').hidden = true;
-    toast('已清空');
+    toast(tr('cleared'));
   }
 
   /* ---------- 事件绑定 ---------- */
@@ -661,6 +785,9 @@
   $('#btnClear').addEventListener('click', clearAll);
   $('#btnTheme').addEventListener('click', function () {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  });
+  $('#btnLang').addEventListener('click', function () {
+    applyLang(uiLang === 'zh' ? 'en' : 'zh');
   });
   $('#btnPrev').addEventListener('click', function () { stepNav(-1); });
   $('#btnNext').addEventListener('click', function () { stepNav(1); });
@@ -671,7 +798,7 @@
   });
   $('#btnCopy').addEventListener('click', copyRaw);
   $('#btnRaw').addEventListener('click', toggleRaw);
-  $('#btnCancelRead').addEventListener('click', function () { state.reading = false; toast('已停止读取'); });
+  $('#btnCancelRead').addEventListener('click', function () { state.reading = false; toast(tr('stopReading')); });
 
   var searchTimer = null;
   $('#searchInput').addEventListener('input', function () {
@@ -714,6 +841,9 @@
   var theme = 'light';
   try { theme = localStorage.getItem('mdreader-theme') || 'light'; } catch (e) { /* 忽略 */ }
   applyTheme(theme);
+  var savedLang = 'zh';
+  try { savedLang = localStorage.getItem('mdreader-lang') || 'zh'; } catch (e) { /* 忽略 */ }
+  applyLang(savedLang, true);
   updateStatus();
   refreshRestoreBanner();
 
@@ -737,10 +867,17 @@
       var diag = document.createElement('p');
       diag.id = 'selftest-diag';
       diag.textContent = 'boxes=' + boxes.length + ' before=' + before + ' after=' + (box && box.checked) + ' disabled=' + (box && box.disabled);
+      // 语言切换自检：zh→en→zh
+      var langEn = false, langZh = false;
+      $('#btnLang').click();
+      langEn = $('#btnDir').textContent.indexOf('Open Folder') >= 0;
+      $('#btnLang').click();
+      langZh = $('#btnDir').textContent.indexOf('打开文件夹') >= 0;
+      diag.textContent += ' langEn=' + langEn + ' langZh=' + langZh;
       doc.appendChild(diag);
-      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + '</p>';
+      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + (langEn && langZh ? '-LANG-OK' : '-LANG-FAIL') + '</p>';
       console.log('[selftest] engines:', typeof marked, typeof DOMPurify);
-      $('#headerStatus').textContent = (window.marked && window.DOMPurify) ? '引擎就绪' : '引擎缺失';
+      $('#headerStatus').textContent = (window.marked && window.DOMPurify) ? tr('enginesReady') : tr('enginesMissing');
     })();
   }
 })();

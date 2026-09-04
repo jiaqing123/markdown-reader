@@ -133,25 +133,26 @@ mark{background:var(--mark);padding:0 3px;border-radius:3px}
 </head>
 <body>
 <header>
-  <div class="brand"><span class="logo">📖</span>Markdown 浏览器</div>
+  <div class="brand"><span class="logo">📖</span><span data-i18n="appName">Markdown 浏览器</span></div>
   <span id="headerStatus"></span>
   <div class="spacer"></div>
-  <button id="btnDir" class="primary">📁 打开文件夹</button>
-  <button id="btnFiles">📄 打开文件</button>
-  <button id="btnClear">🗑 清空</button>
-  <button id="btnTheme" title="切换主题">🌙</button>
+  <button id="btnDir" class="primary" data-i18n="btnDir">📁 打开文件夹</button>
+  <button id="btnFiles" data-i18n="btnFiles">📄 打开文件</button>
+  <button id="btnClear" data-i18n="btnClear">🗑 清空</button>
+  <button id="btnTheme" title="切换主题" data-i18n-title="btnThemeTitle">🌙</button>
+  <button id="btnLang" title="切换语言" data-i18n-title="btnLangTitle">🌐 EN</button>
   <div id="progress" hidden>
     <div id="progressBar"><i></i></div>
     <span id="progressText"></span>
-    <button id="btnCancelRead" class="small">取消</button>
+    <button id="btnCancelRead" class="small" data-i18n="btnCancelRead">取消</button>
   </div>
 </header>
 <main>
   <aside id="sidebar">
     <div class="side-top">
       <div class="search-row">
-        <input id="searchInput" type="search" placeholder="搜索文件名…" autocomplete="off">
-        <label title="在已加载的文件内容中搜索"><input type="checkbox" id="searchContent">全文</label>
+        <input id="searchInput" type="search" placeholder="搜索文件名…" autocomplete="off" data-i18n-placeholder="searchPh">
+        <label title="在已加载的文件内容中搜索" data-i18n-title="searchContentTitle"><input type="checkbox" id="searchContent"><span data-i18n="searchContent">全文</span></label>
       </div>
     </div>
     <div id="restoreBanner" hidden></div>
@@ -161,21 +162,21 @@ mark{background:var(--mark);padding:0 3px;border-radius:3px}
   <section id="content">
     <div id="toolbar" hidden>
       <span id="filePath"></span>
-      <button id="btnPrev" title="上一个（←）">←</button>
+      <button id="btnPrev" title="上一个（←）" data-i18n-title="btnPrevTitle">←</button>
       <span id="navPos"></span>
-      <button id="btnNext" title="下一个（→）">→</button>
-      <button id="btnToc" title="显示 / 隐藏目录">📑 目录</button>
-      <button id="btnCopy" title="复制 Markdown 原文">📋 复制</button>
-      <button id="btnRaw" title="查看 / 返回渲染视图">源文本</button>
+      <button id="btnNext" title="下一个（→）" data-i18n-title="btnNextTitle">→</button>
+      <button id="btnToc" title="显示 / 隐藏目录" data-i18n="btnToc" data-i18n-title="btnTocTitle">📑 目录</button>
+      <button id="btnCopy" title="复制 Markdown 原文" data-i18n="btnCopy" data-i18n-title="btnCopyTitle">📋 复制</button>
+      <button id="btnRaw" title="查看 / 返回渲染视图" data-i18n="btnRaw" data-i18n-title="btnRawTitle">源文本</button>
     </div>
     <div id="article"><div id="doc"></div></div>
     <div id="tocPanel" hidden><h6>目录</h6></div>
     <div id="welcome">
       <div class="w-card">
         <div class="big">📂</div>
-        <h2>打开一个本地文件夹</h2>
-        <p>点击上方「打开文件夹」选择目录，或直接把文件夹 / Markdown 文件拖到本页。</p>
-        <p>支持 .md / .markdown / .mdown / .mkd / .mdx，纯本地运行，无需服务器与网络。</p>
+        <h2 data-i18n="welcomeTitle">打开一个本地文件夹</h2>
+        <p data-i18n="welcomeP1">点击上方「打开文件夹」选择目录，或直接把文件夹 / Markdown 文件拖到本页。</p>
+        <p data-i18n="welcomeP2">支持 .md / .markdown / .mdown / .mkd / .mdx，纯本地运行，无需服务器与网络。</p>
       </div>
     </div>
   </section>
