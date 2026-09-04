@@ -83,6 +83,16 @@ summary:hover{background:var(--hover);color:var(--text)}
 #doc :not(pre)>code{background:var(--code-bg);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
 #doc pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;overflow-x:auto;line-height:1.55}
 #doc pre code{background:none;border:none;padding:0}
+#doc .codeblock{position:relative;margin:1em 0}
+#doc .codeblock>pre{margin:0}
+#doc .codeblock .codecopy{position:absolute;top:8px;right:8px;z-index:2;padding:2px 10px;font-size:12px;line-height:1.7;border-radius:7px;background:var(--panel);color:var(--muted);border:1px solid var(--border);box-shadow:var(--shadow);cursor:pointer;opacity:0;pointer-events:none;transition:opacity .15s,color .15s,border-color .15s,background-color .15s}
+#doc .codeblock:hover .codecopy,
+#doc .codeblock:focus-within .codecopy{opacity:1;pointer-events:auto}
+#doc .codeblock .codecopy:hover{color:var(--accent);border-color:var(--accent)}
+#doc .codeblock .codecopy.copied{color:#fff;background:var(--accent);border-color:var(--accent)}
+@media (hover:none){
+  #doc .codeblock .codecopy{opacity:1;pointer-events:auto}
+}
 #doc blockquote{margin:.8em 0;padding:4px 16px;border-left:4px solid var(--accent);background:var(--accent-soft);color:var(--muted);border-radius:0 8px 8px 0}
 #doc table{border-collapse:collapse;margin:.9em 0;display:block;overflow-x:auto;max-width:100%}
 #doc th,#doc td{border:1px solid var(--border);padding:6px 14px;text-align:left}

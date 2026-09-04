@@ -404,6 +404,7 @@
     doc.innerHTML = html;
 
     enableTaskChecks(doc);
+    enableCodeCopy(doc);
     ensureHeadingIds(doc);
     buildToc(doc);
     $('#article').scrollTop = 0;
@@ -436,6 +437,45 @@
       b.addEventListener('change', function () {
         if (!hinted) { hinted = true; toast('只读预览：勾选仅本次浏览生效，不会写入文件'); }
       });
+    }
+  }
+
+  /* 代码块「复制」按钮：悬浮于每个 <pre> 右上角，点击复制整段代码。
+     innerHTML 重新赋值后需重新调用；幂等（重复调用不会重复绑定/包裹）。 */
+  function enableCodeCopy(doc) {
+    var pres = doc.querySelectorAll('pre');
+    for (var i = 0; i < pres.length; i++) {
+      (function (pre) {
+        var code = pre.querySelector('code');
+        if (!code || !code.textContent.trim()) return;      // 仅处理真正的代码块，跳过空白/纯文本 pre
+        var wrap = pre.parentNode;
+        if (!wrap || !wrap.classList || !wrap.classList.contains('codeblock')) {
+          wrap = document.createElement('div');
+          wrap.className = 'codeblock';
+          pre.parentNode.insertBefore(wrap, pre);
+          wrap.appendChild(pre);                            // 把 pre 移入包裹层
+        }
+        var oldBtn = wrap.querySelector('.codecopy');
+        if (oldBtn) oldBtn.remove();                        // 清除旧按钮（可能已随 innerHTML 重解析丢失监听）
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'codecopy';
+        btn.title = '复制代码';
+        btn.textContent = '复制';
+        btn.addEventListener('click', function () {
+          var prev = btn.textContent;
+          writeClipboard(code.textContent, '代码已复制').then(function (ok) {
+            if (!ok) return;
+            btn.textContent = '✓ 已复制';
+            btn.classList.add('copied');
+            setTimeout(function () {
+              btn.textContent = prev;
+              btn.classList.remove('copied');
+            }, 1600);
+          });
+        });
+        wrap.appendChild(btn);
+      })(pres[i]);
     }
   }
 
@@ -542,25 +582,36 @@
     } else if (art.dataset.prev) {
       doc.innerHTML = art.dataset.prev;
       enableTaskChecks(doc);
+      enableCodeCopy(doc);
       delete art.dataset.prev;
     }
+  }
+
+  /* 写入剪贴板：优先 Clipboard API，失败时降级为隐藏 textarea + execCommand */
+  async function writeClipboard(text, okMsg) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(okMsg);
+      return true;
+    } catch (e) { /* 降级 */ }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    ta.remove();
+    if (ok) toast(okMsg);
+    else toast('复制失败');
+    return ok;
   }
 
   async function copyRaw() {
     var f = state.current;
     if (!f || f.text == null) { toast('无可复制内容'); return; }
-    try {
-      await navigator.clipboard.writeText(f.text);
-      toast('已复制原文到剪贴板');
-    } catch (e) {
-      var ta = document.createElement('textarea');
-      ta.value = f.text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); toast('已复制原文到剪贴板'); }
-      catch (e2) { toast('复制失败'); }
-      ta.remove();
-    }
+    await writeClipboard(f.text, '已复制原文到剪贴板');
   }
 
   /* ---------- 主题 ---------- */
@@ -673,6 +724,7 @@
       var doc = $('#doc');
       doc.innerHTML = sanitizeHtml(marked.parse(sample));
       enableTaskChecks(doc);
+      enableCodeCopy(doc);
       ensureHeadingIds(doc);
       buildToc(doc);
       $('#btnToc').click();
