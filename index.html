@@ -329,6 +329,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       folderFallback: '文件夹',
       errNotCached: '该文件内容未缓存。请重新「打开文件夹」后再浏览。',
       errParse: 'Markdown 解析失败：{e}',
+      sessionEmpty: '本次会话中没有 Markdown 文件',
+      sessionTruncated: '目录中文件过多，仅列出前 {n} 个',
+      sessionFailed: '未能读取会话信息：请通过右键「打开方式」启动，或点上方「打开文件夹」。',
       docTitle: '{name} · {app}',
       taskTitle: '只读预览：勾选状态不会写入文件',
       taskHint: '只读预览：勾选仅本次浏览生效，不会写入文件',
@@ -367,6 +370,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       folderFallback: 'folder',
       errNotCached: 'This file’s content is not cached. Please re-open the folder to browse it.',
       errParse: 'Markdown parse error: {e}',
+      sessionEmpty: 'No Markdown files in this session',
+      sessionTruncated: 'Too many files in this folder; only the first {n} are listed',
+      sessionFailed: 'Could not read the session info: launch via right-click “Open with”, or click “Open Folder” above.',
       docTitle: '{name} · {app}',
       taskTitle: 'Read-only preview: checking will not modify the file',
       taskHint: 'Read-only preview: toggles apply to this session only',
@@ -630,6 +636,75 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     if (!state.current && state.files.length) openFile(state.files[0]);
   }
 
+  /* ---------- 会话入口：右键「打开方式」 ----------
+     启动器（tools/open-with.ps1）把「要打开的文件 + 同目录 Markdown 清单」写成一个
+     临时脚本，并把它的绝对路径放进地址栏 hash（#session=…）。页面用 <script src>
+     载入它：file:// 页面加载同协议脚本不受 CORS 限制，所以清单一定拿得到；
+     正文再按绝对路径用 fetch 读（需浏览器带 --allow-file-access-from-files 启动），
+     图片则直接改写成 file:// 地址交给 <img>（图片加载不需要任何额外权限）。 */
+  function absToFileUrl(abs) {
+    var raw = String(abs).replace(/\\/g, '/');
+    var unc = raw.slice(0, 2) === '//';
+    var body = raw.replace(/^\/+/, '').split('/').map(function (seg) {
+      return encodeURIComponent(seg).replace(/%3A/gi, ':');   // 保留盘符后的冒号
+    }).join('/');
+    return (unc ? 'file://' : 'file:///') + body;
+  }
+
+  function readAbs(absPath) {
+    return fetch(absToFileUrl(absPath)).then(function (res) { return res.blob(); }).then(function (blob) {
+      var name = String(absPath).split(/[\\/]/).pop() || 'file.md';
+      return new File([blob], name, { type: blob.type || 'text/markdown' });
+    });
+  }
+
+  /* 把「目录绝对路径段 + 相对引用」解析成新的绝对路径段（处理 . / ..） */
+  function joinAbs(dirSegs, relSrc) {
+    var segs = dirSegs.slice();
+    var parts = String(relSrc).split('/');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (p === '.' || p === '') continue;
+      if (p === '..') segs.pop(); else segs.push(p);
+    }
+    return segs;
+  }
+
+  function applySession(sess) {
+    if (!sess || !sess.files || !sess.files.length) { toast(tr('sessionEmpty')); return; }
+    var list = sess.files.map(function (it) {
+      var rel = String(it[0]);
+      return {
+        name: rel.split('/').pop(), rel: rel, size: it[2] || 0,
+        file: null, text: null, from: 'abs', absPath: String(it[1])
+      };
+    });
+    state.files = list;
+    state.files.sort(function (a, b) { return a.rel.localeCompare(b.rel, undefined, { numeric: true }); });
+    renderTree();
+    if (sess.trunc) toast(tr('sessionTruncated', { n: list.length }));
+    var target = null;
+    for (var i = 0; i < list.length; i++) { if (list[i].absPath === sess.open) { target = list[i]; break; } }
+    openFile(target || list[0]);
+  }
+
+  function startSession(sessPath) {
+    var s = document.createElement('script');
+    s.src = absToFileUrl(sessPath);
+    s.onload = function () {
+      if (!window.__MDR_SESSION__) { toast(tr('sessionFailed')); return; }
+      applySession(window.__MDR_SESSION__);
+    };
+    s.onerror = function () { toast(tr('sessionFailed')); };
+    document.head.appendChild(s);
+  }
+
+  function sessionPathFromHash() {
+    var m = /(?:^#|&)session=([^&]*)/.exec(location.hash || '');
+    if (!m) return '';
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  }
+
   /* ---------- 列表渲染 ---------- */
   function currentList(q) {
     if (!q) return state.files;
@@ -776,6 +851,11 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     markActive();
 
     var doc = $('#doc');
+    if (f.text == null && !f.file && f.absPath) {
+      // 会话来源：没有 File 对象，按绝对路径即时读盘
+      try { f.file = await readAbs(f.absPath); if (f.file.size) f.size = f.file.size; }
+      catch (e) { f.error = tr('readFailed'); }
+    }
     if (f.text == null && !f.file) {
       doc.innerHTML = '<div class="err">' + tr('errNotCached') + '</div>';
       updateNav();
@@ -926,7 +1006,17 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         else segs.push(p);
       }
       var file = state.allFiles.get(segs.join('/'));
-      if (!file) continue;
+      if (!file) {
+        // 会话来源：没有 File 对象，直接把相对地址改写成绝对 file:// 交给 <img>。
+        // 注意 src 已被 marked/DOMPurify 做过 URL 编码（中文会变成 %XX），先解码再拼路径。
+        if (f.absPath) {
+          var absDir = String(f.absPath).replace(/\\/g, '/').split('/').slice(0, -1);
+          var relSrc = clean;
+          try { relSrc = decodeURIComponent(clean); } catch (e2) { /* 非法转义：按原样处理 */ }
+          img.src = absToFileUrl(joinAbs(absDir, relSrc).join('/'));
+        }
+        continue;
+      }
       try {
         var blob = file.getFile ? await file.getFile() : file;
         if (blob.size > MAX_IMG) continue;
@@ -1114,7 +1204,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   try { savedLang = localStorage.getItem('mdreader-lang') || 'zh'; } catch (e) { /* 忽略 */ }
   applyLang(savedLang, true);
   updateStatus();
-  refreshRestoreBanner();
+  var sessPath = sessionPathFromHash();
+  if (sessPath) startSession(sessPath);   // 右键「打开方式」启动：与缓存恢复无关
+  else refreshRestoreBanner();
 
   /* 自测钩子：地址栏加 #selftest 时自动渲染示例，便于无头测试 */
   if (location.hash === '#selftest') {

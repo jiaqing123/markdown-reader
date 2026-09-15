@@ -346,6 +346,26 @@ flowchart TD
   代码块复制按钮共用该函数。
 - **清空**：`clearAll` 重置 `state`、回收 blob URL、清 `#doc`、删 IDB 缓存、回欢迎页。
 
+### 6.5 会话入口：右键「打开方式」（`#session=`）
+
+第二条数据来源：**没有 FileSystemHandle，只有绝对路径**。启动器（`tools/open-with.ps1`）
+把 `{root, open, files:[[rel, abs, size], …]}` 写成 `%LOCALAPPDATA%\MarkdownReader\sessions\session-*.js`，
+再把该文件绝对路径放进 `location.hash`（`#session=<urlencoded>`）。
+
+- **清单通道**：`startSession` 注入 `<script src="file:///…/session-*.js">`。`file://` 页面
+  加载同协议脚本**不受 CORS 限制**（已实测跨目录、跨盘符均可），所以清单一定拿得到；
+  也正因如此，**每次启动的会话文件名都不同**（否则浏览器复用旧窗口时会读到上一次的会话）。
+- **正文通道**：`openFile` 里新增分支——条目带 `absPath` 且无 `file` 时用 `readAbs` 按绝对路径
+  `fetch` → `new File([blob], name)`，之后完全复用原有渲染链（`readText`/`decode`/`marked`…）。
+  该 `fetch` 需要浏览器带 `--allow-file-access-from-files` 启动（启动器已加）。
+- **图片通道**：`resolveImages` 里 `state.allFiles` 查不到时，若条目有 `absPath`，就把相对地址
+  改写成绝对 `file://` 交给 `<img>`——图片加载**不需要任何权限**。注意 src 已被 marked/DOMPurify
+  做过 URL 编码，必须先 `decodeURIComponent` 再拼路径（否则中文路径会被二次编码）。
+- **rel 规则**：`rel = <根目录名>/<相对路径>`，与「打开文件夹」一致（根目录名取被打开文件所在目录的
+  目录名），因此文件树/排序/高亮全部沿用现成逻辑。
+- **有意为之的取舍**：会话**不调用 `saveCache`**，避免覆盖用户「打开文件夹」的「恢复上次」记录；
+  启动时若带 `#session=` 则跳过 `refreshRestoreBanner`。
+
 ---
 
 ## 7. 函数索引（app.js，按注释分区）
@@ -386,6 +406,10 @@ flowchart TD
 | `showDirectoryPicker()` | 递归枚举目录，登记 allFiles、收集 md | 回调里 `AbortError` 静默 |
 | `handleDropped(files)` | 文件选择/拖放的公共入口（按 `webkitRelativePath` 拼 rel） | |
 | `addFiles(list)` | 去重、排序、先渲染再批量读取（可取消）、缓存、toast | 见 6.1 |
+| `absToFileUrl(abs)` | Windows 绝对路径 → `file:///…`（逐段 encode，保留盘符冒号，兼容 UNC） | 见 6.5 |
+| `readAbs(absPath)` | 按绝对路径 `fetch` → `File`（正文通道，需启动参数） | 见 6.5 |
+| `joinAbs(dirSegs, relSrc)` | 绝对路径段 + 相对引用 → 新路径段（处理 `.`/`..`） | 图片改写用 |
+| `startSession(path)` / `sessionPathFromHash()` / `applySession(sess)` | 注入会话脚本 → 建条目 → 打开目标文件 | 见 6.5 |
 
 ### 7.4 列表 / 搜索渲染
 
@@ -480,6 +504,12 @@ flowchart TD
      --disable-gpu --user-data-dir="$env:TEMP\mdr" `
      --virtual-time-budget=4000 --dump-dom "file:///D:/…/index.html#selftest"
    ```
+   > 注意：`--dump-dom` 会把内联 `<script>` 源码一起吐出来，断言前先
+   > `-replace '(?s)<script\b.*?</script>',''`，否则会误命中字典里的文案。
+4. **会话入口（右键「打开方式」）自检**：`open-with.ps1 -DryRun` 只生成会话并打印 URL，
+   把该 URL 交给同一个浏览器（**必须带 `--allow-file-access-from-files`**）无头渲染即可断言：
+   标题栏是否为目标文件、侧栏清单条数、正文标记、图片 `src` 是否已改写成绝对 `file://`。
+   出错时先看 `%LOCALAPPDATA%\MarkdownReader\open-with.log`。
 3. **手工回归清单**（每次较大改动建议过一遍）：
    - 打开文件夹（含子目录）；拖放文件夹/文件；「打开文件」多选
    - GBK 编码旧文件能正常显示
@@ -526,6 +556,23 @@ flowchart TD
   仍会切换文件（可接受的边界情况；若在意，在 keydown 里追加 `BUTTON` 豁免）。
 - `resolveImages` 只处理 md 文件同批授权内的相对路径；`http(s)/data:/blob:#` 原样放行，
   其余解析不到则保持占位。
+- 会话来源（`#session=`，见 6.5）**没有目录授权**：侧栏树只能来自启动器给的清单（页面无法重新枚举
+  目录）；`state.allFiles` 始终为空，图片靠绝对 `file://` 改写；且不写 IndexedDB 缓存。
+  想让「打开文件夹」那套能力在会话里生效，点一次「打开文件夹」即可。
+- `tools/*.ps1` 必须存成 **UTF-8 带 BOM**（Windows PowerShell 5.1 会把无 BOM 的 UTF-8 当 ANSI/GBK
+  解析，中文乱码后直接语法报错）；`tools/open-with.vbs` 存成 **UTF-16LE 带 BOM**，WScript 才认中文。
+- **「打开方式」菜单里显示的名字/图标来自「命令行中那个可执行文件」的版本信息**，不是 ProgID 名。
+  借道 `wscript.exe` 会显示成「Microsoft ® Windows Based Script Host」，而
+  `HKLM\...\Applications\wscript.exe` 是系统级键（且带 `NoOpenWith`），不能改。
+  因此安装器会用 `csc.exe` 把 `tools/MarkdownReaderLauncher.cs`（程序集标题 = Markdown Reader，
+  `/target:winexe` 保证无控制台）编译到 `%LOCALAPPDATA%\MarkdownReader\MarkdownReader.exe`，
+  并用 `System.Drawing` 现画 `MarkdownReader.ico`，同时注册
+  `HKCU\...\Applications\MarkdownReader.exe`（FriendlyAppName / DefaultIcon / SupportedTypes）。
+  验证手段：`shell32!SHAssocEnumHandlers(".md")` → `IAssocHandler::GetUIName()`，
+  它列出的就是菜单里会显示的名字（不需要人肉看菜单）。csc 不可用时回退 `open-with.vbs`。
+- 页面自检注意：`--dump-dom` 含内联脚本源码，断言前先剥掉 `<script>…</script>`。
+- **文档与实现的既有偏差**：README/本文档曾声称支持「站内相对 .md 链接跳转」，但 `app.js` 里
+  并没有实现（527 行反而给所有链接加了 `target=_blank`）。会话来源同样不支持；要做得先补解析逻辑。
 - 代码块复制内容是 `code.textContent` 原样（含可能的结尾换行），仅按钮文案/状态是动态的。
 - 构建产物与源码必须**一起提交**；仅改 `index.html` 会在下次重建时丢失。
 - 无头自检里的示例固定写死在 app.js selftest 分支，改动渲染功能时顺手扩充断言。

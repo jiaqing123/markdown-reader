@@ -9,6 +9,56 @@
 3. 也可以点 **「打开文件」** 多选单个文件，或直接把文件夹 / 文件**拖进页面**。
 4. 点击左侧文件即可浏览渲染后的内容。
 
+## 右键「打开方式」打开 .md（Windows）
+
+在资源管理器里右键 `.md` → **打开方式 → Markdown Reader**，直接用它打开。只需安装一次：
+
+1. 双击 **`tools\install-open-with.cmd`**（卸载：双击 `tools\uninstall-open-with.cmd`）。
+   只写 `HKEY_CURRENT_USER`，**不需要管理员权限**，也不改动系统默认关联。
+2. 之后右键任意 `.md` / `.markdown` / `.mdown` / `.mkd` / `.mdx` → 打开方式 → **Markdown Reader**。
+3. 想让它变成双击的默认程序：右键 → 打开方式 → 选择其他应用 → 选 **Markdown Reader**
+   → 勾选「始终使用此应用打开 .md 文件」。
+
+### 为什么不直接把 index.html 关联过去
+
+浏览器出于安全限制，**`file://` 页面默认读不到任何本地文件**（实测：不加启动参数时，
+页面里 `fetch` / `XHR` 读本地文件一律失败）。所以中间需要一个启动器把文件路径递进去：
+
+1. `tools/open-with.vbs`（隐藏窗口，不闪黑框）收到资源管理器传来的路径，转交 `tools/open-with.ps1`。
+2. 脚本把「要打开的文件 + 它所在目录（含子目录）的全部 Markdown 清单」写成一个会话脚本：
+   `%LOCALAPPDATA%\MarkdownReader\sessions\session-*.js`。
+3. 用 Edge（优先）或 Chrome，以**专用配置目录 + 应用模式窗口**打开
+   `index.html#session=<会话脚本绝对路径>`，并加上 `--allow-file-access-from-files`。
+4. 页面启动时用 `<script src>` 载入会话脚本（`file://` 页面加载同协议脚本不受 CORS 限制），
+   再按绝对路径读取正文；正文里的相对图片被改写成绝对 `file://` 地址交给 `<img>`
+   （图片加载本身不需要任何额外权限）。
+
+### 菜单里的名字与图标
+
+「打开方式」菜单里显示的名字，取自**命令行中那个可执行文件自己的版本信息**——所以不能直接让
+`wscript.exe` 去跑脚本：那样菜单里会显示成「Microsoft ® Windows Based Script Host」，而
+`HKLM\...\Applications\wscript.exe` 是系统级键，改了会连带污染全系统的脚本宿主名称；菜单里那一行的
+图标同理也来自可执行文件。
+
+因此安装时会用系统自带的 `csc.exe`（.NET Framework 编译器），把 `tools/MarkdownReaderLauncher.cs`
+编译成一个二十来行的小外壳 `%LOCALAPPDATA%\MarkdownReader\MarkdownReader.exe`（GUI 子系统，
+不会闪黑框），它的程序集标题就是 `Markdown Reader`；同时用 `System.Drawing` 现画一个 `M↓` 图标
+`MarkdownReader.ico`（也用作 `.md` 的文件图标）。这些只写 `%LOCALAPPDATA%`，不需要管理员权限。
+若 `csc.exe` 不可用，安装会自动回退到 `open-with.vbs`（功能完全一样，只是菜单里显示脚本宿主）。
+
+请留意：
+
+- 阅读器窗口用的是**独立浏览器配置目录** `%LOCALAPPDATA%\MarkdownReader\profile`，
+  与你日常浏览的窗口互不干扰；`--allow-file-access-from-files` 也只在这个目录里生效，
+  **不要用它上网**。
+- 侧栏文件树以「被打开文件所在目录」为根（含子目录），只列 Markdown 文件。
+- 「打开方式」启动的会话**不写入 IndexedDB 缓存**，不会覆盖你平时「打开文件夹」的「恢复上次」记录。
+- 出问题先看日志 `%LOCALAPPDATA%\MarkdownReader\open-with.log`；
+  手动排查可用 `powershell -File tools\open-with.ps1 "D:\docs\a.md" -DryRun`
+  （只生成会话并打印 URL，不启动浏览器）。
+- 依赖 Windows 自带的 PowerShell 与 Edge（或 Chrome）——`index.html` 本身依旧是纯静态单文件，
+  双击照常可用。
+
 ## 功能
 
 - **文件树**：按目录层级展示，可折叠；侧栏宽度可拖拽调整
@@ -37,7 +87,18 @@
 | `index.html` | **成品**，单文件，直接使用 |
 | `src/part1~4.html`、`src/app.js` | 页面源码（构建时与库拼接） |
 | `libs/` | 内嵌的 `marked`（MIT）与 `DOMPurify`（Apache-2.0 / MPL-2.0）及许可证 |
+| `tools/install-open-with.cmd` | 双击安装「打开方式」注册表项（HKCU，免管理员）——只是一层双击外壳 |
+| `tools/uninstall-open-with.cmd` | 双击卸载（同一个脚本，加 `-Uninstall`） |
+| `tools/install-open-with.ps1` | 安装/卸载的实际实现：生成图标、编译启动器、写 / 删注册表项 |
+| `tools/MarkdownReaderLauncher.cs` | 启动外壳源码（编译成 `MarkdownReader.exe`，菜单里显示的名字就取自它） |
+| `tools/open-with.ps1` | 启动器实现：写会话文件 + 拉起浏览器应用窗口（`-DryRun` 可排查） |
+| `tools/open-with.vbs` | 备用外壳：只有 `csc.exe` 不可用、编译不出 exe 时才会用到 |
 | `DESIGN.md` | 📐 **软件设计文档**：架构图、数据模型、核心流程、函数索引、修改速查表（改代码前建议先读） |
+
+> `tools/` 下的文件对编码有硬要求（否则中文乱码甚至语法报错）：
+> `*.ps1` 必须存成 **UTF-8 带 BOM**（Windows PowerShell 5.1 会把无 BOM 的 UTF-8 当 GBK 解析），
+> `*.vbs` 必须存成 **UTF-16LE**（WScript 默认按 ANSI 解析），`*.cmd` 的注释放 ASCII 最稳。
+> 每个文件头部都写了各自的角色，详见 `DESIGN.md` §12。
 
 重新构建 `index.html`（PowerShell）：
 
