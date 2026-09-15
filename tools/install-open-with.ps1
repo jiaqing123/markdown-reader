@@ -63,11 +63,69 @@ function Find-Csc {
   return $null
 }
 
-# 现画一个 64x64 图标：圆角蓝底 + 白色 M↓（Markdown）。失败不影响安装。
+# 手写一个 32bpp（BGRA，带 alpha）的 .ico。
+# ⚠ 不要改用 Icon.FromHandle($bmp.GetHicon()).Save()：GDI+ 会把图标写成 4bpp +
+#   Windows 固定的 16 色调色板，自定义的底色会被量化掉——#2563EB 被换成纯蓝
+#   #0000FF、#3399CC 被换成青色 #008080，怎么调都是那几种死板的颜色（这正是
+#   图标「丑」的根源）。自己拼 ICO 容器，颜色和 alpha 才能原样保留。
+function Write-Icon32bpp {
+  param([System.Drawing.Bitmap]$Bitmap, [string]$Path)
+
+  $w = $Bitmap.Width
+  $h = $Bitmap.Height
+  $stride     = $w * 4                                   # 32bpp：每行天然 4 字节对齐
+  $maskStride = [int]([Math]::Ceiling($w / 32.0) * 4)     # AND 掩码：每行 1 位、补齐到 4 字节
+  $xor  = New-Object byte[] ($stride * $h)
+  $and  = New-Object byte[] ($maskStride * $h)
+
+  for ($y = 0; $y -lt $h; $y++) {
+    $srcY = $h - 1 - $y                                 # DIB 的像素是自下而上存放的
+    $row  = $y * $stride
+    for ($x = 0; $x -lt $w; $x++) {
+      $c = $Bitmap.GetPixel($x, $srcY)
+      $p = $row + $x * 4
+      $xor[$p]     = $c.B
+      $xor[$p + 1] = $c.G
+      $xor[$p + 2] = $c.R
+      $xor[$p + 3] = $c.A
+      if ($c.A -eq 0) {                                 # 掩码里 1 = 透明（照顾不看 alpha 的老路径）
+        # ⚠ 必须用 Floor：PowerShell 的 [int] 是四舍五入而非截断，[int](63/8) 会得到
+        #   8 而不是 7，最后一行就会越界（Index was outside the bounds of the array）。
+        $i = $y * $maskStride + [int][Math]::Floor($x / 8)
+        $and[$i] = $and[$i] -bor (0x80 -shr ($x % 8))
+      }
+    }
+  }
+
+  $imgBytes = 40 + $xor.Length + $and.Length
+  $ms = New-Object System.IO.MemoryStream
+  $bw = New-Object System.IO.BinaryWriter -ArgumentList $ms
+
+  $bw.Write([uint16]0); $bw.Write([uint16]1); $bw.Write([uint16]1)          # ICONDIR：0 / 图标 / 1 张
+  $bw.Write([byte]$w); $bw.Write([byte]$h); $bw.Write([byte]0); $bw.Write([byte]0)
+  $bw.Write([uint16]1);  $bw.Write([uint16]32)                             # planes / 位深
+  $bw.Write([uint32]$imgBytes); $bw.Write([uint32]22)                      # 数据长度 / 偏移
+
+  $bw.Write([uint32]40); $bw.Write([int32]$w); $bw.Write([int32]($h * 2))  # BITMAPINFOHEADER（高度要含掩码）
+  $bw.Write([uint16]1);  $bw.Write([uint16]32)
+  $bw.Write([uint32]0);  $bw.Write([uint32]($xor.Length + $and.Length))
+  $bw.Write([int32]0);   $bw.Write([int32]0)
+  $bw.Write([uint32]0);  $bw.Write([uint32]0)
+  $bw.Write($xor); $bw.Write($and)
+
+  $bw.Flush()
+  [System.IO.File]::WriteAllBytes($Path, $ms.ToArray())
+  $bw.Dispose(); $ms.Dispose()
+}
+
+# 现画一个 64x64 图标：圆角湖水蓝底 + 白色 M↓（Markdown）。失败不影响安装。
 function New-AppIcon {
   try {
     Add-Type -AssemblyName System.Drawing -ErrorAction Stop
     $size = 64
+    # 底色：柔和湖水蓝 #3399CC（原先的深蓝 #2563EB 偏暗偏艳，观感发闷）。
+    # 白字与它的对比度 3.2:1，够图标里的 M↓ 看清。
+    $plate = [System.Drawing.Color]::FromArgb(255, 51, 153, 204)
     $bmp  = New-Object System.Drawing.Bitmap -ArgumentList $size, $size
     $g    = [System.Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode     = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -81,7 +139,7 @@ function New-AppIcon {
     $path.AddArc($size - $r * 2, $size - $r * 2, $r * 2, $r * 2, 0, 90)
     $path.AddArc(0, $size - $r * 2, $r * 2, $r * 2, 90, 90)
     $path.CloseFigure()
-    $bg = New-Object System.Drawing.SolidBrush -ArgumentList ([System.Drawing.Color]::FromArgb(255, 37, 99, 235))
+    $bg = New-Object System.Drawing.SolidBrush -ArgumentList $plate
     $g.FillPath($bg, $path)
 
     $font = New-Object System.Drawing.Font -ArgumentList 'Segoe UI', 28, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
@@ -92,12 +150,8 @@ function New-AppIcon {
     $rect = New-Object System.Drawing.RectangleF -ArgumentList 0, 0, $size, $size
     $g.DrawString('M↓', $font, $fg, $rect, $fmt)
 
-    $hicon = $bmp.GetHicon()
-    $icon  = [System.Drawing.Icon]::FromHandle($hicon)
-    $fs    = [System.IO.File]::Create($IconFile)
-    $icon.Save($fs)
-    $fs.Close()
-    $icon.Dispose(); $g.Dispose(); $bmp.Dispose()
+    Write-Icon32bpp -Bitmap $bmp -Path $IconFile
+    $g.Dispose(); $bmp.Dispose()
     return $true
   } catch {
     Write-Host ("  ⚠ 图标生成失败（不影响使用）：" + $_.Exception.Message) -ForegroundColor Yellow
