@@ -228,13 +228,16 @@ flowchart TB
 │      │       #doc 宽度上限 = CSS 变量 --doc-maxw（默认 920px，JS 只覆写这一个变量）
 │      ├─ #tocPanel (hidden, 绝对定位右浮)
 │      ├─ #welcome (hidden) 空态引导卡片
-│      └─ #docGrip (绝对定位)           ← 骑在正文栏右缘的宽度手柄：拖动改宽 / 双击复位
+│      ├─ #docGripL (绝对定位, data-dir=-1)  ← 正文栏左缘宽度手柄：靠近栏缘显形 / 拖动改宽 / 双击复位
+│      └─ #docGripR (绝对定位, data-dir=1)   ← 同上，右缘那条
 └─ #toast (右下提示, JS 驱动 class 'show')
    #dirInput / #fileInput (隐藏 file input, 回退/多选用)
 ```
 
 > `--doc-maxw` 只是**上限**：窗口变窄时正文栏由 CSS 自行收进可视宽度，窗口再变宽时又恢复成
-> 用户调过的宽度，全程不需要 JS 参与（所以窗口缩放不会覆盖记忆值）。
+> 用户调过的宽度，全程不需要 JS 参与（所以窗口缩放不会覆盖记忆值）。触屏与窄屏下
+> （`@media (hover:none)`、`@media (max-width:760px)`）CSS 直接把 `max-width` 置为 `none`
+> ——正文栏铺满，手柄一并隐藏。
 
 ### 5.2 DOM ID → 职责速查（改 UI 前先查表）
 
@@ -252,7 +255,7 @@ flowchart TB
 | `btnToc` / `tocPanel` | content | 目录开关与面板 | 事件区、`buildToc`、Esc |
 | `btnCopy` / `btnRaw` | toolbar | 复制原文 / 源文本切换 | `copyRaw` / `toggleRaw` |
 | `article` / `doc` | content | 滚动容器 / 渲染挂载点（**几乎所有阅读逻辑的目标**） | `openFile` 及全部 `enableXxx`/`buildToc`/`resolveImages` |
-| `docGrip` | content（article 右侧） | 正文栏宽度手柄（`role="separator"`，可聚焦）：拖它改宽、双击复位、`←/→` 微调、Home/End 到最窄/最宽；位置与 aria 数值由 `syncDocGrip()` 算；欢迎页 / 目录面板打开 / ≤760px / 触屏下 CSS 自动隐藏 | `startDocResize` / `resetDocWidth` / `nudgeDocWidth` / `syncDocGrip` |
+| `docGripL` / `docGripR` | content（article 左右缘） | 正文栏宽度手柄（`role="separator"`，可聚焦，`data-dir` 定左右）：**鼠标移到栏缘附近**（34px 隐形带）才浮出小圆条，拖它改宽、双击复位、`←/→` 微调、Home/End 到最窄/最宽；位置与 aria 数值由 `syncDocGrips()` 算（左手柄避让侧栏与开合圆钮、右手柄避让滚动条）；欢迎页 / 目录面板打开 / ≤760px / 触屏下 CSS 自动隐藏 | `startDocResize` / `resetDocWidth` / `nudgeDocWidth` / `syncDocGrips` |
 | `welcome` | content | 空态页 | `openFile`/`clearAll` 控制 hidden |
 | `toast` | body 浮动 | 轻提示 | `toast()` |
 | `dirInput`/`fileInput` | body 隐藏 | 目录/多文件选择的降级入口 | 事件绑定区 |
@@ -261,10 +264,11 @@ flowchart TB
 
 - 所有 **Markdown 渲染产物**的样式都挂在 `#doc …` 选择器下，与全局 UI 样式隔离；
   代码块复制相关类：`.codeblock`（相对定位容器）、`.codecopy`（右上角按钮）、`.copied`（成功态）。
-- **正文栏宽度**：`#doc{max-width:var(--doc-maxw)}` + `margin:0 auto` 居中；用户拖 `#docGrip`
-  只改 `--doc-maxw`，布局本身不动。手柄是 `#content` 里绝对定位的一条 14px 隐形带
-  （`transform:translateX(50%)` 让中点正好落在栏缘上），可见部分是竖直居中的 4×44 圆条
-  （`--border`）与悬停/拖动/聚焦时才出现的 1px `--accent` 竖线。
+- **正文栏宽度**：`#doc{max-width:var(--doc-maxw)}` + `margin:0 auto` 居中；用户拖左右任一
+  `#docGrip*` 只改 `--doc-maxw`，布局本身不动。手柄是 `#content` 里绝对定位的两条 34px 隐形带
+  （`left` / `right` 由 JS 算，带子中心对准栏缘），**默认完全透明**，鼠标进带子（或键盘聚焦、
+  或正在拖动）才淡入：竖直居中的 4×44 圆条（`--border`）与 1px `--accent` 竖线；
+  光标常驻 `col-resize`，所以没显形也知道这儿能拖。
 - 主题 = `:root`（浅色）+ `[data-theme="dark"]`（深色）两组 CSS 变量，`applyTheme()` 只切换 `data-theme`。
 - 布局为 flex；`#article` 是唯一滚动容器；`#tocPanel`/`#welcome` 相对 `#article` 区域绝对定位。
 
@@ -462,11 +466,11 @@ flowchart TD
 | `applyTheme(t)` | 切 `data-theme` + 按钮图标 + localStorage |
 | `applyDocWidth(w, persist)` | 正文栏宽度上限的唯一出口：写 / 清 CSS 变量 `--doc-maxw`，`persist` 时才落 localStorage（`null` = 清掉键，回到 CSS 默认值） |
 | `docMaxWidth()` / `docPaneWidth()` | 读当前生效的宽度（计算样式） / 读可视宽度（`#article.clientWidth`），拖动与键盘微调的基准 |
-| `syncDocGrip()` | 把 `#docGrip` 摆到正文栏右缘：`right`（用两栏矩形相减，自动含滚动条）、`top`（`#article.offsetTop`）与 `aria-valuenow/min/max`；由 `ResizeObserver(#article)` + `window resize` 驱动 |
-| `docDragWidth(clientX, centerX, paneW, before)` | 指针 → 宽度（居中栏：宽度＝到栏心距离 ×2）；`>= 可视宽度` 时取 `max(可视宽度, before)`，即"拖到最右＝尽可能宽"且保住记忆里更大的值 |
-| `startDocResize(ev)` | `pointerdown` 拖动主干：拖动中只改样式，`pointerup` 才写记忆；拖动期间 `body.doc-resizing` 关掉文本选中 |
+| `syncDocGrips()` | 摆左右两条 `#docGrip*`：`left` / `right`（用两栏矩形相减，自动含滚动条宽度）、`top`（`#article.offsetTop`）与 `aria-valuenow/min/max`；左手柄下限 `EDGE_CLEAR`（不越进侧栏/开合圆钮）、右手柄下限 `sb + SBAR_CLEAR`（不压滚动条）；由 `ResizeObserver(#article)` + `window resize` 驱动 |
+| `docDragWidth(clientX, centerX, paneW, before, grab, dir)` | 指针 → 宽度（居中栏：到栏心距离 ×2；`dir` 左手柄为 -1，指针越过栏心即判最小）；`>= 可视宽度` 时取 `max(可视宽度, before)`，即"拖到最外＝尽可能宽"且保住记忆里更大的值；`grab` 是按下点与栏缘的偏差（带子有宽度，按下去不跳） |
+| `startDocResize(ev)` | `pointerdown` 拖动主干（两条手柄共用，左右由 `data-dir` 区分）：拖动中只改样式，`pointerup` 才写记忆；拖动期间 `body.doc-resizing` 关掉文本选中 |
 | `nudgeDocWidth(d)` | 键盘微调（`←/→` ±24，Shift ±8；Home/End 到最窄/最宽），立即落盘 |
-| `resetDocWidth()` | 双击手柄复位：清变量与记忆，回到 CSS 默认宽度并 toast 提示 |
+| `resetDocWidth()` | 双击任一栏缘复位：清变量与记忆，回到 CSS 默认宽度并 toast 提示 |
 | `applySidebar(collapsed)` | 切 `body.side-collapsed` + 同步圆钮（箭头/提示/aria）+ localStorage |
 | `toggleSidebar()` | 侧栏开关（`#btnSidebar` 点击与 Ctrl/Cmd+B 共用） |
 | `syncSideToggle(collapsed?)` | 圆钮的箭头字形（张开 ‹ / 缩进 ›）+ `title`/`aria-label`（走 `tr()`）+ `aria-expanded`；语言切换后由 `applyStaticLang` 再调一次 |
@@ -525,14 +529,17 @@ flowchart TD
   id/独立类。修改 Markdown 排版只动 `#doc` 段。
 - **正文栏宽度**：默认值写在 `:root{--doc-maxw:920px}`，`#doc{max-width:var(--doc-maxw)}`；
   JS 只在**行内**覆写这一个变量（`document.documentElement.style`），复位＝删掉行内值。
-  手柄 `#docGrip` 的外观全在 CSS：14px 隐形带 + `::before` 圆条（`var(--border)`）+
-  `::after` 竖线（`var(--accent)`，悬停/聚焦/拖动才显形）；宽度变化**不做过渡**（拖起来才跟手）。
-  隐藏规则是纯选择器：`#welcome:not([hidden]) ~ #docGrip`、`#tocPanel:not([hidden]) ~ #docGrip`
-  （所以 `#docGrip` 必须排在 `#content` 的最末尾），外加 `@media (max-width:760px)` 与
-  `@media (hover:none)` 两条 `display:none`。
+  两条手柄 `#docGripL` / `#docGripR` 共用 `.docGrip` 类，外观全在 CSS：34px 隐形带 +
+  `::before` 圆条（`var(--border)`）+ `::after` 竖线（`var(--accent)`），三者的 `opacity:0`
+  是常态，`:hover` / `:focus-visible` / `.dragging` 才淡入（宽度变化本身**不做过渡**，拖起来才跟手）。
+  隐藏规则是纯选择器：`#welcome:not([hidden]) ~ .docGrip`、`#tocPanel:not([hidden]) ~ .docGrip`
+  （所以两条手柄必须排在 `#content` 的最末尾），外加 `@media (max-width:760px)` 与
+  `@media (hover:none)` 两条 `display:none`；后两个 media 查询里还顺带把
+  `#doc{max-width:none}` 置上——没有鼠标可拖时，正文栏索性铺满。
 - **响应式**：`@media (max-width:760px)`（侧栏 240px、正文内边距收窄、目录面板变窄、
-  正文宽度手柄隐藏）；`@media (hover:none)`（触屏下代码复制按钮常显、正文宽度手柄隐藏
-  ——hover 功能必须考虑无鼠标设备）。
+  正文栏铺满 `max-width:none`、宽度手柄隐藏）；`@media (hover:none)`（触屏下代码复制按钮常显、
+  正文栏铺满、手柄隐藏——hover 功能必须考虑无鼠标设备，**而且不能留下"只能靠鼠标才能调整"的
+  布局参数**，否则触屏用户会被卡在一个调不了的窄栏上）。
 - **改样式流程**：改 `src/part1.html` 的 `<style>` → 重建 `index.html` → 刷新验证深浅两主题。
 
 ---
@@ -542,10 +549,13 @@ flowchart TD
 1. **语法**：`node --check src/app.js`
 2. **构建后自检钩子**：`index.html#selftest`（渲染固定示例：标题/表格/任务列表/引用/
    代码块/链接，验证引擎存在 + 勾选框只读点击生效 + 语言 zh↔en 往返切换 +
-   侧栏折叠/展开往返并校验圆钮箭头翻转 ‹↔› + 正文宽度（设宽生效/落盘、可视宽度不够时
-   自动收窄、拖动规则、合成一次 pointer 拖拽、最后还原用户记忆），DOM 末尾追加
+   侧栏折叠/展开往返并校验圆钮箭头翻转 ‹↔› + 正文宽度，DOM 末尾追加
    `SELFTEST-PASS`，含 `-CHECK-OK`、`-LANG-OK`、`-SIDE-OK`、`-DOC-OK` 标记；
    `#selftest-diag` 里有 `side=` / `arrow=` / `doc=` 明细）。
+   正文宽度一项按窗口形态二选一：默认形态验「设宽生效并落盘 → 宽度绝不溢出可视宽度 →
+   拖动规则（最外＝尽可能宽、越过栏心＝最小）→ 合成一次 pointer 拖拽 → 还原用户记忆」
+   （`doc=` 七项）；触屏 / 窄屏形态（CSS 已把 `max-width` 置 `none`）改验
+   「正文栏铺满 + 手柄隐藏 + 记忆不动」（`doc=max:`）。
    无头验证示例：
    ```powershell
    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `
@@ -566,9 +576,10 @@ flowchart TD
    - 文件名过滤 / 全文搜索（点击结果跳转+高亮）
 - 侧栏缩进 / 拉出（栏目右缘小圆钮、Ctrl+B 两条路径；张开时 ‹、缩进后 ›），重开页面能记住折叠态；
   展开后仍可拖拽调宽，且折叠不会丢掉之前拖出来的自定义宽度
-   - **正文宽度**：窗口够宽时拖正文栏右缘的小竖条能拉宽（一屏看更多）、双击复位；
-     把窗口拉窄正文栏随之收窄、再拉宽回到调过的宽度；重开页面仍是调过的宽度；
-     目录面板打开 / 空态页 / 窄屏下不显示手柄
+   - **正文宽度**：鼠标移到正文栏左/右缘附近才浮出小圆条（平时完全看不见），左右都能拖、
+     双击复位；把窗口拉窄正文栏随之收窄、再拉宽回到调过的宽度；重开页面仍是调过的宽度；
+     目录面板打开 / 空态页下不显示手柄；正文栏铺满时**左边那条不能盖住侧栏与开合圆钮**
+     （圆钮照旧点得动）、右边那条不能压住纵向滚动条
    - 目录 TOC 跳转；`←/→` 切换（手柄聚焦时按 `←/→` 应只改宽度、不切文件）；源文本往返后按钮仍可用
    - 深/浅主题切换；中文 / English 切换（含重开后记忆）；关闭页面重开「恢复上次」；清空
 4. **回归注意**：任何"渲染后增强"改动必须验证 6.2 的三个 innerHTML 点行为一致。
@@ -593,7 +604,7 @@ flowchart TD
 | 改变量/常量（如 4MB） | app.js 顶部常量区 | 涉及缓存兼容性时先测恢复 |
 | 侧栏行为（默认展开、图标、排序） | `buildTree`/`renderNode`；CSS | 排序统一 natural |
 | 侧栏折叠 / 展开 | `applySidebar`/`toggleSidebar`/`syncSideToggle`；CSS `body.side-collapsed` + `#sideRail`/`#btnSidebar` | 折叠态持久化键 `mdreader-sidebar`；`width` 的 `!important` 不能删；箭头/提示是动态文案，走 `tr()` |
-| 正文栏宽度（默认值 / 范围 / 复位 / 拖拽手感） | CSS `:root{--doc-maxw}` + `#docGrip` 段；`applyDocWidth`/`docDragWidth`/`startDocResize`/`nudgeDocWidth`/`resetDocWidth`；常量 `DOC_W_MIN` | 记忆键 `mdreader-docwidth`；`#docGrip` 必须是 `#content` 最后一个子元素（隐藏规则靠兄弟选择器）；`syncDocGrip()` 依赖 `#article` 的 ResizeObserver |
+| 正文栏宽度（默认值 / 范围 / 复位 / 拖拽手感 / 避让） | CSS `:root{--doc-maxw}` + `.docGrip` 段；`applyDocWidth`/`docDragWidth`/`startDocResize`/`nudgeDocWidth`/`resetDocWidth`/`syncDocGrips`；常量 `DOC_W_MIN`/`GRIP_W`/`EDGE_CLEAR`/`SBAR_CLEAR` | 记忆键 `mdreader-docwidth`；两条手柄必须是 `#content` 最后两个子元素（隐藏规则靠兄弟选择器）；`GRIP_W` 要与 CSS 的 `.docGrip` 宽度一致；触屏/窄屏的"铺满"规则在那两条 media 查询里 |
 | 改界面语言/文案 | `DICT`（zh/en 都要加）+ part1 的 `data-i18n` 标注 | 用 `tr()`；重建后两语言各看一遍 |
 | 加新语言（如 ja） | `DICT.ja` + `applyLang` 白名单加分支 + `#btnLang` 文案 | 见 4.4 |
 | 快捷键 | 事件绑定区 `document keydown` | INPUT/TEXTAREA 豁免（Ctrl+B 例外，见 12 节） |
@@ -616,17 +627,29 @@ flowchart TD
   `resize:none`，展开后行内宽度原样恢复，用户自定义宽度不会丢。
 - **正文宽度只记"上限"，不记"实际宽度"**：`--doc-maxw` 比可视宽度大时，浏览器自己就把
   `#doc` 收在容器内，所以窗口缩小不用改记忆值、窗口放大自然回到用户调过的宽度。
-  推论：窄窗口里把栏缘拖到最右**不会**把记忆里更大的值改小（`docDragWidth` 里的
-  `Math.max(max, before)`）——"拖到最右"语义是"尽可能宽"，想真正调窄得往左拖。
+  推论一：窄窗口里把栏缘拖到最外**不会**把记忆里更大的值改小（`docDragWidth` 里的
+  `Math.max(max, before)`）——"拖到最外"语义是"尽可能宽"，想真正调窄得往里拖。
+  推论二：触屏 / 窄屏下 CSS 直接 `max-width:none`（铺满），记忆值原样留着，回到宽屏
+  鼠标环境又生效（自检的 `doc=max:` 分支就守着这条）。
   另外拖动过程中只改样式、`pointerup` 才写 localStorage（避免拖一下写几十次盘）。
+- 左右两条手柄共用一套拖动逻辑，靠 `data-dir`（左 -1 / 右 +1）定方向：指针越过栏心就判为
+  最小宽度。按下点与栏缘的偏差（`grab`）会补回去，所以按在 34px 带子的哪里都不会跳一下。
 - 开合圆钮能点得到，靠的是 `#sideRail{width:0;overflow:visible}` + 圆钮绝对定位：父容器宽 0
   并不影响命中测试（圆钮自身 22×22 的盒子照旧参与 hit-test），但**别给 `#sideRail` 加
   `overflow:hidden`、也别在 `main` 里盖一层全宽遮罩**，否则圆钮会点不到；另外圆钮骑在
   分缝上（横向压住栏目右缘 11px），栏目内滚动条中段会被它遮住 22px，属于有意取舍。
-- 正文宽度手柄 `#docGrip` 的命中区是骑在栏缘上的 14px 带（左右各 7px）：正文栏铺满可视宽度时
-  它会压住纵向滚动条左侧约 7px，属于有意取舍；因为隐藏规则用的是兄弟选择器
-  （`#welcome:not([hidden]) ~ #docGrip`、`#tocPanel:not([hidden]) ~ #docGrip`），
-  **`#docGrip` 必须始终是 `#content` 的最后一个子元素**，否则手柄会在空态/目录面板下露出来。
+- 正文宽度手柄 `#docGripL` / `#docGripR` 是骑在栏缘上的 34px 隐形带（左右各 17px）。
+  两边都有避让下限：左手柄离栏目左缘至少 `EDGE_CLEAR`（2px）——所以它**永远不越进侧栏**，
+  而骑在分缝上的开合圆钮 `#btnSidebar` 走 `#sideRail{z-index:15}`，层叠在 `z-index:12` 的
+  手柄之上，两者重叠处**点到的仍是圆钮**；右手柄离纵向滚动条至少 `SBAR_CLEAR`（4px），
+  铺满时它退到滚动条左侧而不会挡住滚动条。
+- 手柄默认完全透明（`::before` / `::after` 都是 `opacity:0`），靠 `:hover` 显形，所以
+  **别给 `.docGrip` 加 `display:none` 之外的隐藏方式、也别把 `pointer-events` 关掉**——
+  带子既是显形热区也是拖动热区。带子压住的区域是正文栏 40px 内边距和栏外空白，
+  不含正文（代码块复制按钮离栏缘 48px，也在带子之外）。
+- 因为隐藏规则用的是兄弟选择器（`#welcome:not([hidden]) ~ .docGrip`、
+  `#tocPanel:not([hidden]) ~ .docGrip`），**两条手柄必须始终是 `#content` 的最后两个子元素**，
+  否则手柄会在空态/目录面板下露出来。
 - 手柄聚焦时按 `←/→` 会 `stopPropagation()`，否则会顺着 document 上的 keydown 去切上下篇
   （12 节开头那条 BUTTON 未豁免的限制不适用于手柄）。
 - `resolveImages` 只处理 md 文件同批授权内的相对路径；`http(s)/data:/blob:#` 原样放行，

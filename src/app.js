@@ -13,6 +13,10 @@
   var MAX_IMG = 4 * 1024 * 1024;          // 图片解析上限 4MB
   var DOC_W_MIN = 360;                    // 正文栏最小宽度（px）；默认宽度写在 CSS 的 --doc-maxw
   var DOC_W_KEY = 'mdreader-docwidth';    // 正文栏宽度记忆（localStorage）
+  var GRIP_W = 34;                        // 宽度手柄隐形带宽度（须与 CSS 的 .docGrip width 一致）
+  var GRIP_INSET = GRIP_W / 2;            // 手柄中心到所在栏缘的距离（圆条正好骑在栏缘上）
+  var EDGE_CLEAR = 2;                     // 左手柄离栏目左缘的最小距离（不越进侧栏/开合圆钮）
+  var SBAR_CLEAR = 4;                     // 右手柄离纵向滚动条的最小距离
 
   var state = {
     files: [],            // [{name, rel, size, file, text, from, error}]
@@ -622,7 +626,7 @@
     $('#article').scrollTop = 0;
     resolveImages(doc, f);
     if (phrase) highlightInArticle(doc, phrase);
-    syncDocGrip();   // 正文（可能带来纵向滚动条）落定后重摆宽度手柄
+    syncDocGrips();   // 正文（可能带来纵向滚动条）落定后重摆两条宽度手柄
     updateNav();
   }
 
@@ -863,13 +867,14 @@
 
   function toggleSidebar() { applySidebar(!document.body.classList.contains('side-collapsed')); }
 
-  /* ---------- 内容宽度（拖动调整） ----------
+  /* ---------- 内容宽度（左右两条手柄） ----------
      正文栏 #doc 的宽度上限是 CSS 变量 --doc-maxw（默认值写在 part1 的 :root 里）：
-     窗口够宽时用户可拖 #docGrip 把它拉宽，一屏看到更多内容。
+     鼠标移到栏缘附近会浮出小圆条，左右两条都能拖，一屏看到更多内容。
      它只是「上限」——窗口变窄时 CSS 自动把正文栏收进可视宽度，窗口再变宽时又恢复成
-     用户调过的宽度，两种情况都不需要 JS 插手，也不会覆盖记忆值。
-     记忆在 localStorage 'mdreader-docwidth'；拖到最右＝尽可能宽（窗口不够宽时不会把
-     记忆里更大的值改小），双击手柄复位成默认宽度。 */
+     用户调过的宽度，两种情况都不需要 JS 插手，也不会覆盖记忆值；
+     触屏 / 窄屏下 CSS 直接把正文栏铺满（那条 media 查询里 max-width:none）。
+     记忆在 localStorage 'mdreader-docwidth'；拖到最外＝尽可能宽（窗口不够宽时不会把
+     记忆里更大的值改小），双击任一栏缘复位成默认宽度。 */
   function docPaneWidth() {
     var art = $('#article');
     return art ? art.clientWidth : 0;
@@ -896,7 +901,7 @@
         else localStorage.setItem(DOC_W_KEY, String(px));
       } catch (e) { /* 忽略 */ }
     }
-    syncDocGrip();
+    syncDocGrips();
   }
 
   /* 复位：清掉变量与记忆，宽度回到 CSS 默认值 */
@@ -905,44 +910,62 @@
     toast(tr('docWReset'));
   }
 
-  /* 把手柄摆到正文栏右缘：横向按两栏实际位置算（自带滚动条宽度），纵向贴着 #article 区域 */
-  function syncDocGrip() {
-    var grip = $('#docGrip'), art = $('#article'), doc = $('#doc');
-    if (!grip || !art || !doc) return;
+  /* 摆两条手柄：横向按两栏实际位置算（自带滚动条宽度），纵向贴着 #article 区域。
+     避让：左边不越进侧栏（EDGE_CLEAR 同时让开骑在分缝上的开合圆钮），右边不压滚动条。 */
+  function syncDocGrips() {
+    var gl = $('#docGripL'), gr = $('#docGripR'), art = $('#article'), doc = $('#doc');
+    if (!gr || !art || !doc) return;
     var ar = art.getBoundingClientRect();
     var dr = doc.getBoundingClientRect();
-    var right = ar.right - dr.right - art.scrollLeft;   // #article 无内边距/边框，两个矩形可直接相减
+    var sb = Math.max(art.offsetWidth - art.clientWidth, 0);           // 纵向滚动条宽度
+    var left = dr.left - ar.left - art.scrollLeft;                     // 正文栏左缘（相对栏目左缘）
+    var right = ar.right - dr.right - art.scrollLeft;                  // 正文栏右缘（相对栏目右缘）
+    if (!isFinite(left) || left < 0) left = 0;
     if (!isFinite(right) || right < 0) right = 0;
-    grip.style.right = Math.round(right) + 'px';
-    grip.style.top = art.offsetTop + 'px';
-    grip.setAttribute('aria-valuenow', String(Math.round(dr.width)));
-    grip.setAttribute('aria-valuemin', String(DOC_W_MIN));
-    grip.setAttribute('aria-valuemax', String(Math.round(Math.max(docPaneWidth(), DOC_W_MIN))));
+    if (gl) gl.style.left = Math.max(left - GRIP_INSET, EDGE_CLEAR) + 'px';
+    gr.style.right = Math.max(right - GRIP_INSET, sb + SBAR_CLEAR) + 'px';
+    var top = art.offsetTop + 'px';
+    if (gl) gl.style.top = top;
+    gr.style.top = top;
+    var now = String(Math.round(dr.width));
+    var min = String(DOC_W_MIN);
+    var max = String(Math.round(Math.max(docPaneWidth(), DOC_W_MIN)));
+    [gl, gr].forEach(function (g) {
+      if (!g) return;
+      g.setAttribute('aria-valuenow', now);
+      g.setAttribute('aria-valuemin', min);
+      g.setAttribute('aria-valuemax', max);
+    });
   }
 
-  /* 指针位置 → 宽度：正文栏居中，故宽度＝指针到栏心距离 × 2（手柄始终跟手） */
-  function docDragWidth(clientX, centerX, paneW, before) {
+  /* 指针位置 → 宽度：正文栏居中，故宽度＝指针到栏心距离 ×2。dir 区分左右两条手柄
+     （左手柄取负号），指针越过栏心就判为最小宽度，不会突然翻成很宽。
+     再加抓取偏差 grab——手柄是 34px 的带子，按下的点未必正好在栏缘上，补回偏差才不会跳。 */
+  function docDragWidth(clientX, centerX, paneW, before, grab, dir) {
     var max = Math.max(paneW, DOC_W_MIN);
-    var w = (clientX - centerX) * 2;
-    if (w >= max) w = Math.max(max, before);   // 拖到最右＝尽可能宽：窗口不够宽时保住记忆里更大的值
+    var w = ((dir < 0 ? -1 : 1) * (clientX - centerX)) * 2 + (grab || 0);
+    if (w >= max) w = Math.max(max, before);   // 拖到最外＝尽可能宽：窗口不够宽时保住记忆里更大的值
     if (w < DOC_W_MIN) w = DOC_W_MIN;
     return Math.round(w);
   }
 
   function startDocResize(ev) {
     if (ev.button != null && ev.button !== 0) return;   // 只认左键（触屏 pointerdown 的 button 同样是 0）
-    var grip = $('#docGrip'), art = $('#article'), doc = $('#doc');
+    var grip = ev.currentTarget;
+    var art = $('#article'), doc = $('#doc');
     if (!grip || !art || !doc) return;
     ev.preventDefault();
+    var dir = parseFloat(grip.dataset.dir) < 0 ? -1 : 1;   // 左手柄 -1、右手柄 +1（见 part1 的 data-dir）
     var before = docMaxWidth();
     var paneW = docPaneWidth();
     var dr = doc.getBoundingClientRect();
     var centerX = dr.left + dr.width / 2;
+    var grab = dr.width - dir * (ev.clientX - centerX) * 2;   // 抓取点与栏缘的偏差
     var width = before;
     document.body.classList.add('doc-resizing');
     grip.classList.add('dragging');
     function onMove(e) {
-      width = docDragWidth(e.clientX, centerX, paneW, before);
+      width = docDragWidth(e.clientX, centerX, paneW, before, grab, dir);
       applyDocWidth(width, false);
     }
     function onEnd() {
@@ -1014,17 +1037,19 @@
   $('#btnFiles').addEventListener('click', function () { $('#fileInput').click(); });
   $('#btnClear').addEventListener('click', clearAll);
   $('#btnSidebar').addEventListener('click', toggleSidebar);                 // 栏目边缘的圆钮：缩进 / 拉出
-  $('#docGrip').addEventListener('pointerdown', startDocResize);             // 正文栏右缘的手柄：拖动改宽
-  $('#docGrip').addEventListener('dblclick', resetDocWidth);                 // 双击复位默认宽度
-  $('#docGrip').addEventListener('keydown', function (e) {                   // 手柄可聚焦：方向键微调
-    var step = e.shiftKey ? 8 : 24;
-    if (e.key === 'ArrowLeft') nudgeDocWidth(-step);
-    else if (e.key === 'ArrowRight') nudgeDocWidth(step);
-    else if (e.key === 'Home') nudgeDocWidth(-1e6);
-    else if (e.key === 'End') nudgeDocWidth(1e6);
-    else return;
-    e.preventDefault();
-    e.stopPropagation();   // 别让 ←/→ 冒泡到 document 去切上/下篇
+  $$('.docGrip').forEach(function (g) {                                      // 正文栏左右两条手柄共用一套逻辑
+    g.addEventListener('pointerdown', startDocResize);                       // 拖动改宽
+    g.addEventListener('dblclick', resetDocWidth);                           // 双击复位默认宽度
+    g.addEventListener('keydown', function (e) {                             // 手柄可聚焦：方向键微调
+      var step = e.shiftKey ? 8 : 24;
+      if (e.key === 'ArrowLeft') nudgeDocWidth(-step);
+      else if (e.key === 'ArrowRight') nudgeDocWidth(step);
+      else if (e.key === 'Home') nudgeDocWidth(-1e6);
+      else if (e.key === 'End') nudgeDocWidth(1e6);
+      else return;
+      e.preventDefault();
+      e.stopPropagation();   // 别让 ←/→ 冒泡到 document 去切上/下篇
+    });
   });
   $('#btnTheme').addEventListener('click', function () {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
@@ -1103,8 +1128,8 @@
     if (isFinite(numDocW) && numDocW > 0) savedDocW = numDocW;
   } catch (e) { /* 忽略 */ }
   applyDocWidth(savedDocW, false);   // 恢复记忆宽度；窗口不够宽时由 CSS 自动收窄
-  if (window.ResizeObserver) { try { new ResizeObserver(syncDocGrip).observe($('#article')); } catch (e) { /* 忽略 */ } }
-  window.addEventListener('resize', syncDocGrip);   // 兜底：无 ResizeObserver 时也要跟住窗口变化
+  if (window.ResizeObserver) { try { new ResizeObserver(syncDocGrips).observe($('#article')); } catch (e) { /* 忽略 */ } }
+  window.addEventListener('resize', syncDocGrips);   // 兜底：无 ResizeObserver 时也要跟住窗口变化
   updateStatus();
   var sessPath = sessionPathFromHash();
   if (sessPath) startSession(sessPath);   // 右键「打开方式」启动：与缓存恢复无关
@@ -1148,43 +1173,61 @@
       var sideBack = document.body.classList.contains('side-collapsed') === sideWas;
       var arrowBack = $('#btnSidebar').textContent === arrowWas;
       diag.textContent += ' side=' + sideOff + '/' + sideBack + ' arrow=' + arrowOff + '/' + arrowBack;
-      // 内容宽度自检：设宽即时生效并落盘 → 窗口不够宽时 CSS 自动收窄（绝不溢出）→
-      // 拖动规则（最右＝尽可能宽、最左＝最小宽度）→ 合成一次真实拖拽（变宽/变窄/松手落盘）→ 还原用户记忆
+      // 内容宽度自检：默认形态验「设宽生效并落盘 → 不溢出可视宽度 → 拖动规则 → 合成一次真实拖拽 → 还原记忆」；
+      // 触屏 / 窄屏（CSS 强制 max-width:none）形态改验「铺满 + 手柄隐藏 + 记忆不动」
       var docEl = $('#doc');
-      var grip = $('#docGrip');
-      var docWBefore = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth));
+      var gripL = $('#docGripL'), gripR = $('#docGripR');
       var rawWBefore = null;
       try { rawWBefore = localStorage.getItem(DOC_W_KEY); } catch (e) { /* 忽略 */ }
-      applyDocWidth(1234, true);
-      var docApplied = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth)) === 1234;
-      var docStored = false;
-      try { docStored = localStorage.getItem(DOC_W_KEY) === '1234'; } catch (e) { /* 忽略 */ }
-      var gripPlaced = grip.style.right !== '' && grip.style.top !== '' && parseFloat(grip.getAttribute('aria-valuenow')) > 0;
-      applyDocWidth(99999, false);
-      var renderedW = docEl.getBoundingClientRect().width;
-      var docClamped = renderedW <= docPaneWidth() + 1;
-      var curW = Math.round(renderedW);
-      var cx = docEl.getBoundingClientRect().left + renderedW / 2;
-      var dragRules = docDragWidth(cx + 10000, cx, 800, 1500) === 1500 && docDragWidth(cx - 10000, cx, 800, 1500) === DOC_W_MIN;
-      applyDocWidth(curW, true);
-      var dragOk = true;
-      if (window.PointerEvent) {   // 合成一次拖拽：按下手柄 → 指针移到目标位 → 松手
-        var synthDrag = function (x) {
-          grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: cx, button: 0, pointerId: 1 }));
-          window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x, pointerId: 1 }));
-          window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, pointerId: 1 }));
-          return docMaxWidth();
-        };
-        var dragRight = synthDrag(cx + (curW + 400) / 2);
-        var dragLeft = synthDrag(cx - 10000);
-        var dragStored = false;
-        try { dragStored = localStorage.getItem(DOC_W_KEY) === String(Math.round(dragLeft)); } catch (e) { /* 忽略 */ }
-        dragOk = dragRight >= curW && (dragRight <= DOC_W_MIN || dragLeft < dragRight) && dragStored;
+      var docOk;
+      // 两条手柄都要摆好（此时目录面板还开着、手柄是 display:none，所以只验算出的行内值），
+      // 且左手柄带避让下限、右手柄不跑到滚动条上
+      var gripPlaced = !!gripL && !!gripR &&
+        parseFloat(gripL.style.left) >= EDGE_CLEAR && parseFloat(gripL.style.top) >= 0 &&
+        parseFloat(gripR.style.right) >= SBAR_CLEAR &&
+        parseFloat(gripR.getAttribute('aria-valuenow')) > 0;
+      var dr0 = docEl.getBoundingClientRect();
+      var cx = dr0.left + dr0.width / 2;
+      var dragRules = docDragWidth(cx + 10000, cx, 800, 1500, 0, 1) === 1500 &&      // 右手柄拖到最右＝尽可能宽
+                      docDragWidth(cx - 10000, cx, 800, 1500, 0, 1) === DOC_W_MIN && // 右手柄拖过栏心＝最小宽度
+                      docDragWidth(cx - 10000, cx, 800, 1500, 0, -1) === 1500;       // 左手柄拖到最左＝尽可能宽
+      if (window.getComputedStyle(docEl).maxWidth === 'none') {
+        docOk = gripPlaced && dragRules &&
+          Math.abs(dr0.width - docPaneWidth()) <= 1 &&                               // 正文栏铺满可视宽度
+          window.getComputedStyle(gripL).display === 'none' &&
+          window.getComputedStyle(gripR).display === 'none' &&
+          String(rawWBefore) === String(localStorage.getItem(DOC_W_KEY));            // 记忆没被动过
+        diag.textContent += ' doc=max:' + docOk;
+      } else {
+        var docWBefore = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth));
+        applyDocWidth(1234, true);
+        var docApplied = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth)) === 1234;
+        var docStored = false;
+        try { docStored = localStorage.getItem(DOC_W_KEY) === '1234'; } catch (e) { /* 忽略 */ }
+        applyDocWidth(99999, false);
+        var renderedW = docEl.getBoundingClientRect().width;
+        var docClamped = renderedW <= docPaneWidth() + 1;
+        var curW = Math.round(renderedW);
+        applyDocWidth(curW, true);
+        var dragOk = true;
+        if (window.PointerEvent) {   // 合成一次拖拽：按下手柄 → 指针移到目标位 → 松手
+          var synthDrag = function (x) {
+            gripR.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: cx, button: 0, pointerId: 1 }));
+            window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x, pointerId: 1 }));
+            window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, pointerId: 1 }));
+            return docMaxWidth();
+          };
+          var dragRight = synthDrag(cx + (curW + 400) / 2);
+          var dragLeft = synthDrag(cx - 10000);
+          var dragStored = false;
+          try { dragStored = localStorage.getItem(DOC_W_KEY) === String(Math.round(dragLeft)); } catch (e) { /* 忽略 */ }
+          dragOk = dragRight >= curW && (dragRight <= DOC_W_MIN || dragLeft < dragRight) && dragStored;
+        }
+        applyDocWidth(rawWBefore == null ? null : parseFloat(rawWBefore), true);   // 还原用户记忆（自测不留痕）
+        var docRestored = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth)) === docWBefore;
+        docOk = docApplied && docStored && docRestored && gripPlaced && docClamped && dragRules && dragOk;
+        diag.textContent += ' doc=' + docApplied + '/' + docStored + '/' + docRestored + '/' + gripPlaced + '/' + docClamped + '/' + dragRules + '/' + dragOk;
       }
-      applyDocWidth(rawWBefore == null ? null : parseFloat(rawWBefore), true);   // 还原用户记忆（自测不留痕）
-      var docRestored = Math.round(parseFloat(window.getComputedStyle(docEl).maxWidth)) === docWBefore;
-      var docOk = docApplied && docStored && docRestored && gripPlaced && docClamped && dragRules && dragOk;
-      diag.textContent += ' doc=' + docApplied + '/' + docStored + '/' + docRestored + '/' + gripPlaced + '/' + docClamped + '/' + dragRules + '/' + dragOk;
       doc.appendChild(diag);
       doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + (langEn && langZh ? '-LANG-OK' : '-LANG-FAIL') + (sideOff && sideBack && arrowOff && arrowBack ? '-SIDE-OK' : '-SIDE-FAIL') + (docOk ? '-DOC-OK' : '-DOC-FAIL') + '</p>';
       console.log('[selftest] engines:', typeof marked, typeof DOMPurify);
