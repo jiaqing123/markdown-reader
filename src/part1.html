@@ -10,6 +10,7 @@
   --bg:#f5f6f8; --panel:#ffffff; --border:#e3e6ec; --text:#20242e; --muted:#717a8c;
   --accent:#2f6fed; --accent-soft:#eef3ff; --code-bg:#f1f3f6; --hover:#f0f2f6;
   --mark:#ffe58a; --danger:#d64545; --shadow:0 1px 3px rgba(20,28,48,.08);
+  --doc-maxw:920px;   /* 正文栏宽度上限：拖 #docGrip 可改，JS 只覆写这一个变量 */
 }
 [data-theme="dark"]{
   --bg:#0e1116; --panel:#161a22; --border:#262d3a; --text:#e7eaf0; --muted:#8d96a8;
@@ -80,7 +81,19 @@ summary:hover{background:var(--hover);color:var(--text)}
 #filePath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
 #navPos{color:var(--muted);font-size:12px;min-width:64px;text-align:center}
 #article{flex:1;overflow:auto;position:relative}
-#doc{max-width:920px;margin:0 auto;padding:26px 40px 90px}
+#doc{max-width:var(--doc-maxw);margin:0 auto;padding:26px 40px 90px}
+/* 内容宽度手柄：骑在正文栏右缘（translateX(50%) 把中点对到栏缘上），拖它改宽，双击复位默认。
+   位置（right/top）与 aria 数值由 syncDocGrip() 计算，这里只管外观与可用状态；
+   欢迎页、目录面板打开、窄屏、触屏四种情况下自动隐藏。 */
+#docGrip{position:absolute;top:0;right:0;bottom:0;width:14px;transform:translateX(50%);cursor:col-resize;touch-action:none;z-index:12}
+#docGrip::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:4px;height:44px;border-radius:3px;background:var(--border);transition:background-color .15s,width .15s}
+#docGrip::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--accent);opacity:0;transition:opacity .15s}
+#docGrip:hover::before,#docGrip:focus-visible::before,#docGrip.dragging::before{background:var(--accent);width:5px}
+#docGrip:hover::after,#docGrip:focus-visible::after,#docGrip.dragging::after{opacity:.4}
+#docGrip:focus-visible{outline:none}
+#welcome:not([hidden]) ~ #docGrip,
+#tocPanel:not([hidden]) ~ #docGrip{display:none}
+body.doc-resizing{user-select:none;-webkit-user-select:none;cursor:col-resize}
 #doc h1{font-size:1.9em;border-bottom:1px solid var(--border);padding-bottom:.3em;margin:1.2em 0 .6em}
 #doc h2{font-size:1.45em;border-bottom:1px solid var(--border);padding-bottom:.25em;margin:1.2em 0 .5em}
 #doc h3{font-size:1.2em;margin:1.1em 0 .4em}
@@ -103,6 +116,7 @@ summary:hover{background:var(--hover);color:var(--text)}
 #doc .codeblock .codecopy.copied{color:#fff;background:var(--accent);border-color:var(--accent)}
 @media (hover:none){
   #doc .codeblock .codecopy{opacity:1;pointer-events:auto}
+  #docGrip{display:none}
 }
 #doc blockquote{margin:.8em 0;padding:4px 16px;border-left:4px solid var(--accent);background:var(--accent-soft);color:var(--muted);border-radius:0 8px 8px 0}
 #doc table{border-collapse:collapse;margin:.9em 0;display:block;overflow-x:auto;max-width:100%}
@@ -138,6 +152,7 @@ mark{background:var(--mark);padding:0 3px;border-radius:3px}
 @media (max-width:760px){
   #sidebar{width:240px}
   #doc{padding:18px 18px 70px}
+  #docGrip{display:none}
   #tocPanel{width:220px}
 }
 </style>
@@ -193,6 +208,7 @@ mark{background:var(--mark);padding:0 3px;border-radius:3px}
         <p data-i18n="welcomeP2">支持 .md / .markdown / .mdown / .mkd / .mdx，纯本地运行，无需服务器与网络。</p>
       </div>
     </div>
+    <div id="docGrip" role="separator" aria-orientation="vertical" tabindex="0" title="拖动调整内容宽度（双击复位）" data-i18n-title="docGripTitle" aria-label="拖动调整内容宽度（双击复位）" data-i18n-aria-label="docGripTitle"></div>
   </section>
 </main>
 <div id="toast"></div>
