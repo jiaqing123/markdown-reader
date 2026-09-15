@@ -3,7 +3,8 @@
 > 本文档是改代码时的"地图"：讲清文件怎么组织、运行时怎么分层、数据长什么样、
 > 关键流程怎么走、每个函数管什么、想改一个功能该动哪里。
 >
-> **适用代码快照**：仓库当前 `src/` + `libs/`（含"代码块一键复制"功能，2025 年初版基线）。
+> **适用代码快照**：仓库当前 `src/` + `libs/`（含"代码块一键复制""界面国际化""侧栏折叠"功能，
+> 2025 年初版基线）。
 > 若后续架构有变，请同步更新本文档（维护约定见文末）。
 >
 > **图例说明**：文中流程图/时序图用 Mermaid 编写，请用支持 Mermaid 的查看器阅读
@@ -182,6 +183,7 @@ flowchart TB
 | IndexedDB：库 `markdown-reader` v1，store `kv`，键 `last` | `{id:'last', savedAt, folder, files:[{name,rel,size,text}]}`。文本超过 `MAX_CACHE_TEXT`(4MB) 不缓存正文，仅保留之前缓存过的正文（`saveCache(metaOnly)` 分两阶段写） |
 | localStorage：`mdreader-theme` | `'light' \| 'dark'` |
 | localStorage：`mdreader-lang` | `'zh' \| 'en'`（默认 `'zh'`） |
+| localStorage：`mdreader-sidebar` | `'1' \| '0'`（侧栏展开 / 折叠，默认 `'1'`） |
 | 内存：`state.imageUrls` | 相对路径图片的 blob URL，切文件/清空时 `revokeObjectURL` |
 
 ### 4.4 界面文案与国际化（i18n）
@@ -207,15 +209,17 @@ flowchart TB
 ### 5.1 布局结构（part1.html）
 
 ```text
-<body> (flex column)
+<body> (flex column, 折叠态 → body.side-collapsed)
 ├─ <header>  brand + #headerStatus + spacer + 按钮群(#btnDir #btnFiles #btnClear #btnTheme #btnLang)
 │            └─ #progress (批量读取进度条, 默认 hidden)
 ├─ <main> (flex row)
-│  ├─ <aside #sidebar> (可横向拖宽 220–540px)
+│  ├─ <aside #sidebar> (可横向拖宽 220–540px；折叠时宽度收 0)
 │  │   ├─ .side-top > #searchInput + #searchContent(全文)
 │  │   ├─ #restoreBanner (hidden)      ← 缓存恢复横幅
 │  │   ├─ #fileList                    ← 文件树 / 搜索结果列表渲染区
 │  │   └─ #sideStatus
+│  ├─ #sideRail (宽 0 的分缝容器，不占位)
+│  │   └─ #btnSidebar                  ← 骑在栏目右缘的小圆钮：张开显 ‹，缩进显 ›
 │  └─ <section #content> (flex column)
 │      ├─ #toolbar (hidden)  #filePath + #btnPrev #navPos #btnNext #btnToc #btnCopy #btnRaw
 │      ├─ #article > #doc              ← 阅读滚动容器 / 渲染产物挂载点
@@ -231,6 +235,7 @@ flowchart TB
 | --- | --- | --- | --- |
 | `headerStatus` | header | 当前文件夹名 · 文件数 | `updateStatus`、selftest |
 | `btnDir` / `btnFiles` / `btnClear` / `btnTheme` / `btnLang` | header | 打开文件夹 / 打开文件 / 清空 / 主题 / 语言切换 | 事件绑定区 |
+| `sideRail` / `btnSidebar` | main（栏目右缘） | 0 宽分缝容器 + 骑在分缝上的 22px 圆钮（浅蓝底 `--accent-soft`）；张开显 ‹（点它缩进）、缩进显 ›（点它拉出），`title`/`aria-label`/`aria-expanded` 随之更新 | `applySidebar` / `toggleSidebar` / `syncSideToggle` / Ctrl+B |
 | `progress` `progressBar` `progressText` `btnCancelRead` | header | 批量读取进度 | `showProgress/updateProgress/hideProgress` |
 | `searchInput` `searchContent` | sidebar 顶 | 文件名过滤 / 全文搜索开关 | 事件绑定区 |
 | `restoreBanner` | sidebar | 缓存恢复 UI（内含动态 `btnRestore`/`btnDelCache`） | `refreshRestoreBanner` |
@@ -443,10 +448,13 @@ flowchart TD
 | 函数 | 作用 |
 | --- | --- |
 | `applyTheme(t)` | 切 `data-theme` + 按钮图标 + localStorage |
+| `applySidebar(collapsed)` | 切 `body.side-collapsed` + 同步圆钮（箭头/提示/aria）+ localStorage |
+| `toggleSidebar()` | 侧栏开关（`#btnSidebar` 点击与 Ctrl/Cmd+B 共用） |
+| `syncSideToggle(collapsed?)` | 圆钮的箭头字形（张开 ‹ / 缩进 ›）+ `title`/`aria-label`（走 `tr()`）+ `aria-expanded`；语言切换后由 `applyStaticLang` 再调一次 |
 | `showProgress / updateProgress / hideProgress` | 批量读取进度条 |
 | `clearAll()` | 全清（含缓存与 blob URL） |
 | 事件绑定区（IIFE 尾部） | 全部按钮/输入/键盘/拖放监听（见源码注释 `事件绑定`） |
-| 启动区 | 恢复主题 → 恢复语言 → updateStatus → refreshRestoreBanner |
+| 启动区 | 恢复主题 → 恢复语言 → 恢复侧栏折叠态 → updateStatus → refreshRestoreBanner |
 | `#selftest` 分支 | 地址栏 `#selftest` 时渲染示例并输出断言（见第 10 节） |
 
 ### 7.7 国际化（i18n，见 4.4）
@@ -484,6 +492,16 @@ flowchart TD
   `--bg --panel --border --text --muted --accent --accent-soft --code-bg --hover --mark --danger --shadow`。
   新增组件颜色一律引用变量，不要写死色值。
 - **公共按钮类**：`.primary`（主色实心）、`.small`、`.on`（激活态）。
+- **侧栏折叠**：状态只记在 `<body>` 的 `side-collapsed` 类上，CSS 用
+  `body.side-collapsed #sidebar{width:0 !important;min-width:0 !important;…;resize:none}` 收掉面板；
+  `width` 必须是 `!important`——否则盖不过用户拖拽时浏览器写进 `style` 的行内宽度。
+  开关是 `#sideRail`（`flex:0 0 0;width:0`，不占布局）里绝对定位的 22px 圆钮 `#btnSidebar`：
+  展开时 `left:-11px` 让圆钮正好骑在栏目右缘的缝上，折叠时 `left:0` 停在窗口左缘；`left` 与
+  宽度同速过渡 `.22s`，所以是「跟着分缝滑过去」而不是跳过去，且折叠后圆钮完整可见（不会
+  被窗口左缘切掉一半）。圆钮底色取 `var(--accent-soft)`（浅色主题＝浅蓝 `#eef3ff`，深色主题自动
+  取主题里对应的深蓝底，不硬编码色值），悬停时描边与字形转 `--accent`。
+  `@media (prefers-reduced-motion:reduce)` 下 `#sidebar` 与
+  `#btnSidebar` 的过渡都关闭。
 - **内容样式作用域**：全部挂在 `#doc` 下（`#doc p`、`#doc pre`…）；全局 UI 用
   id/独立类。修改 Markdown 排版只动 `#doc` 段。
 - **响应式**：`@media (max-width:760px)`（侧栏 240px、正文内边距收窄、目录面板变窄）；
@@ -496,8 +514,9 @@ flowchart TD
 
 1. **语法**：`node --check src/app.js`
 2. **构建后自检钩子**：`index.html#selftest`（渲染固定示例：标题/表格/任务列表/引用/
-   代码块/链接，验证引擎存在 + 勾选框只读点击生效 + 语言 zh↔en 往返切换，
-   DOM 末尾追加 `SELFTEST-PASS`，含 `-CHECK-OK` 与 `-LANG-OK` 标记）。
+   代码块/链接，验证引擎存在 + 勾选框只读点击生效 + 语言 zh↔en 往返切换 +
+   侧栏折叠/展开往返并校验圆钮箭头翻转 ‹↔›，DOM 末尾追加 `SELFTEST-PASS`，含
+   `-CHECK-OK`、`-LANG-OK`、`-SIDE-OK` 标记；`#selftest-diag` 里有 `side=` / `arrow=` 明细）。
    无头验证示例：
    ```powershell
    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `
@@ -516,6 +535,8 @@ flowchart TD
    - 任务列表勾选（只读提示）；代码块复制（含长行横向滚动块）
    - 相对路径图片显示；站内相对 .md 链接跳转
    - 文件名过滤 / 全文搜索（点击结果跳转+高亮）
+- 侧栏缩进 / 拉出（栏目右缘小圆钮、Ctrl+B 两条路径；张开时 ‹、缩进后 ›），重开页面能记住折叠态；
+  展开后仍可拖拽调宽，且折叠不会丢掉之前拖出来的自定义宽度
    - 目录 TOC 跳转；`←/→` 切换；源文本往返后按钮仍可用
    - 深/浅主题切换；中文 / English 切换（含重开后记忆）；关闭页面重开「恢复上次」；清空
 4. **回归注意**：任何"渲染后增强"改动必须验证 6.2 的三个 innerHTML 点行为一致。
@@ -539,9 +560,10 @@ flowchart TD
 | 新浏览器特性 + 降级 | 仿 `pickFolder`（探测→catch→回退） | 取消(AbortError)静默 |
 | 改变量/常量（如 4MB） | app.js 顶部常量区 | 涉及缓存兼容性时先测恢复 |
 | 侧栏行为（默认展开、图标、排序） | `buildTree`/`renderNode`；CSS | 排序统一 natural |
+| 侧栏折叠 / 展开 | `applySidebar`/`toggleSidebar`/`syncSideToggle`；CSS `body.side-collapsed` + `#sideRail`/`#btnSidebar` | 折叠态持久化键 `mdreader-sidebar`；`width` 的 `!important` 不能删；箭头/提示是动态文案，走 `tr()` |
 | 改界面语言/文案 | `DICT`（zh/en 都要加）+ part1 的 `data-i18n` 标注 | 用 `tr()`；重建后两语言各看一遍 |
 | 加新语言（如 ja） | `DICT.ja` + `applyLang` 白名单加分支 + `#btnLang` 文案 | 见 4.4 |
-| 快捷键 | 事件绑定区 `document keydown` | INPUT/TEXTAREA 豁免 |
+| 快捷键 | 事件绑定区 `document keydown` | INPUT/TEXTAREA 豁免（Ctrl+B 例外，见 12 节） |
 | 本图（本文档）过时 | 更新对应章节 | 见下节约定 |
 
 ---
@@ -554,6 +576,15 @@ flowchart TD
   其余功能不受影响——新增持久化逻辑也要这样宽容。
 - 快捷键 `←/→` 目前只豁免 `INPUT/TEXTAREA`：代码块「复制」按钮获得焦点时按方向键
   仍会切换文件（可接受的边界情况；若在意，在 keydown 里追加 `BUTTON` 豁免）。
+- `Ctrl/Cmd+B`（侧栏开关）**刻意放在 `INPUT/TEXTAREA` 豁免之前**：在搜索框里按也要生效，
+  且该组合不与输入框的原生快捷键冲突。新增全局快捷键时照此判断先后顺序。
+- 侧栏折叠用的是 `body.side-collapsed` 类 + `#sidebar{width:0 !important}`：
+  `!important` 是为了盖过原生拖拽写进行内 `style` 的宽度，**不能删**；折叠期间
+  `resize:none`，展开后行内宽度原样恢复，用户自定义宽度不会丢。
+- 开合圆钮能点得到，靠的是 `#sideRail{width:0;overflow:visible}` + 圆钮绝对定位：父容器宽 0
+  并不影响命中测试（圆钮自身 22×22 的盒子照旧参与 hit-test），但**别给 `#sideRail` 加
+  `overflow:hidden`、也别在 `main` 里盖一层全宽遮罩**，否则圆钮会点不到；另外圆钮骑在
+  分缝上（横向压住栏目右缘 11px），栏目内滚动条中段会被它遮住 22px，属于有意取舍。
 - `resolveImages` 只处理 md 文件同批授权内的相对路径；`http(s)/data:/blob:#` 原样放行，
   其余解析不到则保持占位。
 - 会话来源（`#session=`，见 6.5）**没有目录授权**：侧栏树只能来自启动器给的清单（页面无法重新枚举

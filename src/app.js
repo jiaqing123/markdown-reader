@@ -43,6 +43,7 @@
     zh: {
       appName: 'Markdown 浏览器', multiLoc: '多个位置',
       btnDir: '📁 打开文件夹', btnFiles: '📄 打开文件', btnClear: '🗑 清空',
+      sideHideTitle: '收起侧栏（Ctrl+B）', sideShowTitle: '展开侧栏（Ctrl+B）',
       btnThemeTitle: '切换主题', btnLangTitle: '切换语言（中文 / English）', btnCancelRead: '取消',
       searchPh: '搜索文件名…', searchContent: '全文', searchContentTitle: '在已加载的文件内容中搜索',
       rbRestore: '恢复', rbClearCache: '清除缓存', rbTitle: '恢复上次：{folder}',
@@ -84,6 +85,7 @@
     en: {
       appName: 'Markdown Reader', multiLoc: 'Multiple locations',
       btnDir: '📁 Open Folder', btnFiles: '📄 Open Files', btnClear: '🗑 Clear All',
+      sideHideTitle: 'Collapse sidebar (Ctrl+B)', sideShowTitle: 'Expand sidebar (Ctrl+B)',
       btnThemeTitle: 'Switch theme', btnLangTitle: 'Switch language (中文 / English)', btnCancelRead: 'Cancel',
       searchPh: 'Search filenames…', searchContent: 'Full text', searchContentTitle: 'Search inside loaded file contents',
       rbRestore: 'Restore', rbClearCache: 'Clear cache', rbTitle: 'Restore last: {folder}',
@@ -140,6 +142,7 @@
     $$('[data-i18n-placeholder]').forEach(function (el) { el.placeholder = tr(el.getAttribute('data-i18n-placeholder')); });
     var b = $('#btnLang');
     if (b) b.textContent = (uiLang === 'zh') ? '🌐 EN' : '🌐 中文';
+    syncSideToggle();   // 开合按钮的箭头 / 提示是动态文案，语言切换后要重刷
   }
 
   /* 切换语言：持久化 + 静态文案 + 按需重渲染当前视图（initial 用于启动，避免重绘） */
@@ -828,6 +831,32 @@
     await writeClipboard(f.text, tr('copiedRaw'));
   }
 
+  /* ---------- 侧栏折叠（缩进 / 拉出） ----------
+     折叠态 = <body> 上的 'side-collapsed' 类，宽度过渡由 CSS 负责；
+     记忆在 localStorage 'mdreader-sidebar'（'1' 展开、'0' 折叠）。
+     开关是骑在栏目右缘分缝上的小圆钮 #btnSidebar（#sideRail 宽 0、圆钮绝对定位）：
+     展开时显示向左箭头（点它缩进），缩进时显示向右箭头（点它拉出），
+     不依赖 hover，触屏同样可点；Ctrl+B 与它是同一条路径。 */
+  function syncSideToggle(collapsed) {
+    var b = $('#btnSidebar');
+    if (!b) return;
+    if (typeof collapsed !== 'boolean') collapsed = document.body.classList.contains('side-collapsed');
+    b.textContent = collapsed ? '›' : '‹';
+    var tip = tr(collapsed ? 'sideShowTitle' : 'sideHideTitle');
+    b.title = tip;
+    b.setAttribute('aria-label', tip);
+    b.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  }
+
+  function applySidebar(collapsed) {
+    collapsed = !!collapsed;
+    document.body.classList.toggle('side-collapsed', collapsed);
+    syncSideToggle(collapsed);
+    try { localStorage.setItem('mdreader-sidebar', collapsed ? '0' : '1'); } catch (e) { /* 忽略 */ }
+  }
+
+  function toggleSidebar() { applySidebar(!document.body.classList.contains('side-collapsed')); }
+
   /* ---------- 主题 ---------- */
   function applyTheme(t) {
     document.documentElement.dataset.theme = t;
@@ -873,6 +902,7 @@
   $('#btnDir').addEventListener('click', pickFolder);
   $('#btnFiles').addEventListener('click', function () { $('#fileInput').click(); });
   $('#btnClear').addEventListener('click', clearAll);
+  $('#btnSidebar').addEventListener('click', toggleSidebar);                 // 栏目边缘的圆钮：缩进 / 拉出
   $('#btnTheme').addEventListener('click', function () {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   });
@@ -920,6 +950,12 @@
   });
 
   document.addEventListener('keydown', function (e) {
+    // Ctrl/Cmd+B 在任何焦点下都生效（输入框内也不与原生快捷键冲突），故先于下面的 INPUT 豁免
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'b' || e.key === 'B')) {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
     var tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepNav(-1); }
@@ -934,6 +970,9 @@
   var savedLang = 'zh';
   try { savedLang = localStorage.getItem('mdreader-lang') || 'zh'; } catch (e) { /* 忽略 */ }
   applyLang(savedLang, true);
+  var sideCollapsed = false;
+  try { sideCollapsed = localStorage.getItem('mdreader-sidebar') === '0'; } catch (e) { /* 忽略 */ }
+  applySidebar(sideCollapsed);
   updateStatus();
   var sessPath = sessionPathFromHash();
   if (sessPath) startSession(sessPath);   // 右键「打开方式」启动：与缓存恢复无关
@@ -966,8 +1005,19 @@
       $('#btnLang').click();
       langZh = $('#btnDir').textContent.indexOf('打开文件夹') >= 0;
       diag.textContent += ' langEn=' + langEn + ' langZh=' + langZh;
+      // 侧栏折叠自检：来回切一次，body 类名与圆钮箭头（张开 ‹ / 缩进 ›）都应跟着翻转并能还原
+      var sideWas = document.body.classList.contains('side-collapsed');
+      var arrowWas = $('#btnSidebar').textContent;
+      $('#btnSidebar').click();
+      var nowCollapsed = document.body.classList.contains('side-collapsed');
+      var sideOff = nowCollapsed !== sideWas;
+      var arrowOff = $('#btnSidebar').textContent === (nowCollapsed ? '›' : '‹');
+      $('#btnSidebar').click();
+      var sideBack = document.body.classList.contains('side-collapsed') === sideWas;
+      var arrowBack = $('#btnSidebar').textContent === arrowWas;
+      diag.textContent += ' side=' + sideOff + '/' + sideBack + ' arrow=' + arrowOff + '/' + arrowBack;
       doc.appendChild(diag);
-      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + (langEn && langZh ? '-LANG-OK' : '-LANG-FAIL') + '</p>';
+      doc.innerHTML += '<p id="selftest-ok">SELFTEST-PASS' + (notDisabled && toggled ? '-CHECK-OK' : '-CHECK-FAIL') + (langEn && langZh ? '-LANG-OK' : '-LANG-FAIL') + (sideOff && sideBack && arrowOff && arrowBack ? '-SIDE-OK' : '-SIDE-FAIL') + '</p>';
       console.log('[selftest] engines:', typeof marked, typeof DOMPurify);
       $('#headerStatus').textContent = (window.marked && window.DOMPurify) ? tr('enginesReady') : tr('enginesMissing');
     })();
